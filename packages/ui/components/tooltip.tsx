@@ -16,8 +16,8 @@ export function TooltipProvider({children}: {children: React.ReactNode}) {
  return <SharedProvider.Provider value={keyboard}><Primitive.Provider delayDuration={450} skipDelayDuration={300}>{children}</Primitive.Provider></SharedProvider.Provider>
 }
 
-// Visible text is a conservative fallback. Explicit copy should explain actions
-// whose label alone is ambiguous. Never inspect a component's implementation.
+// Read visible text to distinguish labeled controls from icon-only controls.
+// Never inspect a component's implementation.
 export function controlText(children: React.ReactNode): string {
  return React.Children.toArray(children).map(child => {
   if(typeof child==='string'||typeof child==='number')return String(child)
@@ -70,10 +70,10 @@ function TooltipBody({content,children,side}:{content:React.ReactNode;children:R
 
 export type TooltipButtonProps = React.ComponentProps<'button'> & {tooltip?:Content}
 export const TooltipButton=React.forwardRef<HTMLButtonElement,TooltipButtonProps>(function TooltipButton({tooltip,title,children,...props},ref){
- const content=tooltip??title??props['aria-label']??controlText(children)
+ const content=tooltip??title??(controlText(children)?undefined:props['aria-label'])
  return <ControlTooltip content={content}><button {...props} ref={ref}>{children}</button></ControlTooltip>
 })
 export const TooltipLink=React.forwardRef<HTMLAnchorElement,React.ComponentProps<'a'>&{tooltip?:Content}>(function TooltipLink({tooltip,title,children,...props},ref){
- const content=tooltip??title??props['aria-label']??controlText(children)
+ const content=tooltip??title??(controlText(children)?undefined:props['aria-label'])
  return <ControlTooltip content={content}><a {...props} ref={ref}>{children}</a></ControlTooltip>
 })

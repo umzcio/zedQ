@@ -41,7 +41,7 @@ export default function ChatSidebar({ chat, closing }: {
 
  return <div className="chat-navigation">
   <div className="chat-navigation-actions">
-   <TooltipButton tooltip="Start a new conversation" className="chat-new chat-primary-row" disabled={closing || chat.loading || !!chat.error} onClick={() => { setQuery('');setScope('active'); void chat.create() }}>
+   <TooltipButton tooltip={false} className="chat-new chat-primary-row" disabled={closing || chat.loading || !!chat.error} onClick={() => { setQuery('');setScope('active'); void chat.create() }}>
     <Plus size={18}/><span>New chat</span>
    </TooltipButton>
   </div>

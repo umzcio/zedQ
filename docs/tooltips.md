@@ -4,7 +4,7 @@ The September 12, 2026 pass uses shared Radix tooltips across the desktop shell 
 
 ## Shared behavior
 
-`TooltipProvider` spans the shell and persistent module surfaces. `TooltipButton` and `TooltipLink` preserve native props, refs and semantics; `Button`, `IconButton`, `SelectField`, `SelectTrigger`, `Checkbox` and `CollapsibleTrigger` use the same policy. Explicit `tooltip` copy takes precedence over legacy `title`, accessible labels and visible text. `tooltip={false}` opts out. `ControlTooltip` adds help to existing status/disclosure elements. Keyboard-relevant noninteractive targets must be focusable.
+`TooltipProvider` spans the shell and persistent module surfaces. `TooltipButton` and `TooltipLink` preserve native props, refs and semantics; `Button`, `IconButton`, `SelectField`, `SelectTrigger`, `Checkbox` and `CollapsibleTrigger` use the same policy. Explicit `tooltip` copy takes precedence over legacy `title`. Accessible labels provide default help only for icon-only buttons and links; visible labels do not automatically generate tooltips. `tooltip={false}` opts out. `ControlTooltip` adds help to existing status/disclosure elements. Keyboard-relevant noninteractive targets must be focusable.
 
 Pointer delay is 450 ms, with a 300 ms window for immediate adjacent tooltips. Keyboard navigation opens help immediately; restored focus after pointer selection does not. Escape dismisses help. Tooltips use neutral theme surfaces, a 300px maximum width, collision padding and a 110ms opacity-only entrance. Subsequent tooltips and reduced-motion preference skip that animation. Leaving the trigger or content dismisses help immediately outside the hover corridor; the small crossing gap has a maximum 120ms grace period. Content remains hoverable and contains no interactive controls. Tooltips also close when the window loses focus or the document becomes hidden. Native disabled controls remain disabled, with a focusable help wrapper; module CSS preserves affected tab/select layouts.
 
@@ -26,7 +26,7 @@ A tooltip must not overwrite the state of its underlying Radix checkbox, disclos
 
 ## Intentional exclusions
 
-Editable note/chat/document text, decorative icons and generated document content do not get blanket tooltips. Citation links retain their existing richer source preview cards. Menu items retain readable labels and standard menu focus/selection; the invoking controls explain their purpose. Ordinary form fields retain their labels and nearby guidance. Iframe titles remain accessibility labels, not tooltip copy.
+Self-explanatory text buttons, links, and navigation labels do not need tooltips that repeat their labels. Keep explicit help for ambiguity, shortcuts, disabled reasons, or full names and paths that may be truncated. Editable note/chat/document text, decorative icons and generated document content do not get blanket tooltips. Citation links retain their existing richer source preview cards. Menu items retain readable labels and standard menu focus/selection; the invoking controls explain their purpose. Ordinary form fields retain their labels and nearby guidance. Iframe titles remain accessibility labels, not tooltip copy.
 
 No new user-owned items or separate context-menu actions were introduced. Existing context-menu actions are preserved.
 
