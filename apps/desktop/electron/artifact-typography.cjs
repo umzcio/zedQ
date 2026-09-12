@@ -1,0 +1,8 @@
+'use strict';
+const FONT_FAMILIES=Object.freeze(['Arial','Times New Roman','Georgia','Verdana','Courier New','Bradley Hand','Brush Script MT','Comic Sans MS']);
+const properties={titleSize:{type:'number',minimum:8,maximum:40},headingSize:{type:'number',minimum:8,maximum:40},bodySize:{type:'number',minimum:8,maximum:24},...Object.fromEntries(['fontFamily','titleFontFamily','headingFontFamily','bodyFontFamily'].map(key=>[key,{type:'string',enum:FONT_FAMILIES,description:key==='fontFamily'?'Base font for the document. Bradley Hand gives a casual handwritten look; Brush Script MT gives a flowing script. Role-specific choices override this font.':'Font for this text role; overrides fontFamily.'}]))};
+const typographySchema={type:'object',description:'Text sizes in points and supported font families. Omitted properties retain defaults or existing revision settings. Fonts apply to real exported text; code blocks may retain a monospace font.',properties,additionalProperties:false};
+function validTypography(value){return value===undefined||!!value&&typeof value==='object'&&!Array.isArray(value)&&Object.entries(value).every(([key,v])=>Object.hasOwn(properties,key)&&(properties[key].type==='string'?FONT_FAMILIES.includes(v):Number.isFinite(v)&&v>=properties[key].minimum&&v<=properties[key].maximum))}
+function checkTypography(value){if(!validTypography(value))throw Error('Invalid document typography. Choose a supported font family; use title and heading sizes from 8–40 points and body sizes from 8–24 points.');}
+const fontFamily=(typography,role,fallback='Aptos')=>typography?.[role+'FontFamily']??typography?.fontFamily??fallback;
+module.exports={typographySchema,validTypography,checkTypography,fontFamily,FONT_FAMILIES};

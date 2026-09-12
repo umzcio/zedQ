@@ -1,0 +1,20 @@
+{
+  "name": "zedq",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "modules/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @zq/desktop",
+    "test": "npm test -w @zq/desktop",
+    "desktop": "npm start -w @zq/desktop",
+    "pack": "npm run pack -w @zq/desktop",
+    "check:runtime": "npm run check:runtime -w @zq/desktop",
+    "modules:keygen": "node scripts/module-keygen.mjs",
+    "modules:build": "node scripts/build-modules.mjs"
+  },
+  "packageManager": "npm@11.17.0"
+}

@@ -1,0 +1,15 @@
+{
+  "id": "zq.tasks",
+  "version": "1.1.0",
+  "apiVersion": 1,
+  "title": "Tasks",
+  "view": "Tasks",
+  "icon": "tasks",
+  "capabilities": [
+    "workspace.read",
+    "workspace.write",
+    "commands",
+    "artifacts",
+    "artifacts.v1"
+  ]
+}

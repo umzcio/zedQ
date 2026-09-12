@@ -1,0 +1,31 @@
+node_modules/
+dist/
+release/
+.local-data/
+.DS_Store
+*.log
+apps/desktop/bundled-modules/
+
+apps/desktop/native/bin/
+
+# Local credentials and developer environments
+.env
+.env.*
+!.env.example
+!.env.sample
+*.p12
+*.pfx
+*.key
+*private*.pem
+*.keychain*
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.build/
+.swiftpm/
+coverage/
+
+# Disposable browser-test harnesses
+.artifact-document-test-*/
+.helper-preview-test-*/

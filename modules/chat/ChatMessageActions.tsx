@@ -1,0 +1,59 @@
+import {useEffect,useRef,useState,type ReactNode} from 'react'
+import {ArrowClockwise,CaretLeft,CaretRight,Check,Copy,DotsThree,PencilSimple} from '@phosphor-icons/react'
+import {useHost,unwrap,type ChatMessage,type ModelChoice,type Note} from '@zq/module-api'
+import {Button,ContextMenu,ContextMenuContent,ContextMenuItem,ContextMenuTrigger,Dialog,DialogContent,DialogDescription,DialogTitle,DropdownMenu,DropdownMenuContent,DropdownMenuItem,DropdownMenuTrigger,SelectField} from '@zq/ui'
+import type {ChatController} from './useChat'
+import ModelPicker from './ModelPicker'
+import {plainMessage,sourceMessageLink} from './message-text'
+import './chat-message-actions.css'
+import './artifacts.css'
+import ArtifactEditor from './ArtifactEditor'
+
+type Props={message:ChatMessage;chat:ChatController;choice:ModelChoice|null;disabled:boolean;notes:Note[];settings:()=>void;children:ReactNode;matched?:boolean;currentMatch?:boolean}
+export default function ChatMessageActions({message:m,chat,choice,disabled,notes,settings,children,matched,currentMatch}:Props){
+ const {commands,notify,services}=useHost(),[artifactEditor,setArtifactEditor]=useState(false),[artifactLibrary,setArtifactLibrary]=useState<import('@zq/module-api').Artifact[]>([]),[menu,setMenu]=useState(false),[dialog,setDialog]=useState<'edit'|'regenerate'|'details'|'append'|null>(null),[text,setText]=useState(m.content),[targetModel,setTargetModel]=useState(choice),[noteId,setNoteId]=useState(''),[selection,setSelection]=useState(''),[pending,setPending]=useState(false),[error,setError]=useState(''),[copied,setCopied]=useState(false)
+ const article=useRef<HTMLElement>(null),trigger=useRef<HTMLButtonElement>(null),lock=useRef(false),timer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined),openingDialog=useRef(false)
+ const conversation=chat.conversation!,blocked=disabled||pending,versions=m.versions??[],versionIndex=versions.findIndex(v=>v.id===m.activeVersionId)
+ useEffect(()=>()=>clearTimeout(timer.current),[])
+ function captureSelection(){const value=window.getSelection();setSelection(value&&!value.isCollapsed&&article.current?.contains(value.anchorNode)&&article.current?.contains(value.focusNode)?value.toString():'')}
+ async function perform(action:()=>Promise<unknown>){if(blocked||lock.current)return;lock.current=true;setPending(true);setError('');try{await action();setDialog(null)}catch(e){setError((e as Error).message);notify((e as Error).message)}finally{lock.current=false;setPending(false)}}
+ async function copy(markdown:boolean){try{await unwrap(services.clipboard.writeText(markdown?m.content:plainMessage(m.content)));setCopied(true);clearTimeout(timer.current);timer.current=setTimeout(()=>setCopied(false),1800)}catch{notify('Couldn’t copy this message. Select the text and press ⌘C.')}}
+ function open(kind:NonNullable<typeof dialog>){openingDialog.current=true;setError('');setText(m.content);setTargetModel(choice);setDialog(kind)}
+ const source=`\n\nSource: [${conversation.title.replace(/[\[\]]/g,'')||'Chat'}](${sourceMessageLink(conversation.id,m.id,m.activeVersionId)})`
+ const savedText=(selection||m.content)+source
+ function saveNote(){if(!blocked)commands.run('notes.new',savedText)}
+ function saveTask(){if(!blocked)commands.run('tasks.new',{title:plainMessage(selection||m.content).split('\n').find(line=>line.trim())?.slice(0,120)||'Follow up on chat',description:savedText})}
+ const actions=[
+  {id:'plain',label:'Copy as plain text',run:()=>void copy(false),disabled:!m.content},
+  {id:'markdown',label:'Copy as Markdown',run:()=>void copy(true),disabled:!m.content},
+  ...(selection?[{id:'selection',label:'Copy selected text',run:()=>{void unwrap(services.clipboard.writeText(selection)).catch(()=>notify('Couldn’t copy selected text'))},disabled:false}]:[]),
+  {id:'revise',label:m.role==='user'?'Edit and resend…':m.status==='error'||m.status==='interrupted'?'Retry response…':'Regenerate response…',run:()=>open(m.role==='user'?'edit':'regenerate'),disabled:blocked},
+  {id:'branch',label:'Branch from here',run:()=>void perform(()=>chat.branch(m.id)),disabled:blocked},
+  ...(versions.length>1?[{id:'previous',label:'Previous version',run:()=>void perform(()=>chat.selectVersion(m.id,versions[versionIndex-1].id)),disabled:blocked||versionIndex<=0},{id:'next',label:'Next version',run:()=>void perform(()=>chat.selectVersion(m.id,versions[versionIndex+1].id)),disabled:blocked||versionIndex<0||versionIndex>=versions.length-1}]:[]),
+  {id:'artifact',label:'Create artifact…',run:()=>{openingDialog.current=true;setArtifactEditor(true);void services.artifacts.list().then(result=>{if(result.ok)setArtifactLibrary(result.value)})},disabled:blocked||!m.content.trim()},
+  {id:'note',label:selection?'Save selection to Notes':'Save to Notes',run:saveNote,disabled:blocked||!(selection||m.content).trim()},
+  {id:'append',label:selection?'Append selection to note…':'Append to note…',run:()=>{setNoteId(notes[0]?.id??'');open('append')},disabled:blocked||!notes.length||!m.content},
+  {id:'task',label:selection?'Create task from selection…':'Create task…',run:saveTask,disabled:blocked||!m.content},
+  ...(m.role==='assistant'?[{id:'details',label:'Response details',run:()=>open('details'),disabled:false}]:[]),
+ ]
+ function menuClose(e:Event){if(openingDialog.current)e.preventDefault()}
+ return <><ContextMenu onOpenChange={value=>{setMenu(value);if(value)captureSelection()}}><ContextMenuTrigger asChild><article ref={article} tabIndex={0} data-message-id={m.id} data-find-match={matched||undefined} data-find-current={currentMatch||undefined} data-actions-open={menu||undefined} className={`chat-message message-${m.role}`} aria-label={m.role==='user'?'Your message':'zQ response'} onKeyDown={e=>{if(e.target===e.currentTarget&&e.key==='F2'&&m.role==='user'&&!blocked){e.preventDefault();open('edit')}}}>
+  <div className="chat-message-body">{children}</div>
+  <div className="chat-message-actions">
+   {versions.length>1&&<div className="chat-version-nav" aria-label="Message versions"><button type="button" aria-label="Previous version" title="Previous version" disabled={blocked||versionIndex<=0} onClick={()=>void perform(()=>chat.selectVersion(m.id,versions[versionIndex-1].id))}><CaretLeft size={12}/></button><span aria-live="polite">{versionIndex+1} / {versions.length}</span><button type="button" aria-label="Next version" title="Next version" disabled={blocked||versionIndex<0||versionIndex>=versions.length-1} onClick={()=>void perform(()=>chat.selectVersion(m.id,versions[versionIndex+1].id))}><CaretRight size={12}/></button></div>}
+   <button type="button" title={copied?'Copied':'Copy message'} aria-label={copied?'Message copied':'Copy message'} disabled={!m.content} onClick={()=>void copy(false)}>{copied?<Check size={14}/>:<Copy size={14}/>}</button>
+   <button type="button" title={m.role==='user'?'Edit and resend':'Regenerate response'} aria-label={m.role==='user'?'Edit and resend':'Regenerate response'} disabled={blocked} onClick={()=>open(m.role==='user'?'edit':'regenerate')}>{m.role==='user'?<PencilSimple size={14}/>:<ArrowClockwise size={14}/>}</button>
+   <DropdownMenu onOpenChange={value=>{setMenu(value);if(value)captureSelection()}}><DropdownMenuTrigger asChild><button ref={trigger} type="button" aria-label="Message actions" title="Message actions"><DotsThree size={18}/></button></DropdownMenuTrigger><DropdownMenuContent align={m.role==='user'?'end':'start'} onCloseAutoFocus={menuClose}>{actions.map(a=><DropdownMenuItem key={a.id} disabled={a.disabled} onSelect={a.run}>{a.label}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>
+  </div><span className="sr-only" role="status">{copied?'Message copied':''}</span>
+ </article></ContextMenuTrigger><ContextMenuContent onCloseAutoFocus={menuClose}>{actions.map(a=><ContextMenuItem key={a.id} disabled={a.disabled} onSelect={a.run}>{a.label}</ContextMenuItem>)}</ContextMenuContent></ContextMenu>
+ <Dialog open={!!dialog} onOpenChange={value=>{if(!value&&!pending)setDialog(null)}}><DialogContent className="chat-message-dialog" onCloseAutoFocus={e=>{e.preventDefault();openingDialog.current=false;trigger.current?.focus({preventScroll:true})}}><DialogTitle>{dialog==='edit'?'Edit and resend':dialog==='regenerate'?'Regenerate response':dialog==='append'?'Append to note':'Response details'}</DialogTitle><DialogDescription>{dialog==='edit'||dialog==='regenerate'?'The original and its following messages remain available in version history.':dialog==='append'?'Adds this text and a link to its source conversation.':'The provider and model recorded when this response was requested.'}</DialogDescription>
+  {(dialog==='edit'||dialog==='regenerate')&&<form onSubmit={e=>{e.preventDefault();if(!targetModel)return;void perform(()=>chat.revise({conversationId:conversation.id,messageId:m.id,...(dialog==='edit'?{text}:{}),...targetModel}))}}>
+   {dialog==='edit'&&<textarea autoFocus className="chat-message-editor" aria-label="Edit message" value={text} disabled={blocked} onChange={e=>setText(e.target.value)}/>}
+   <div className="chat-revise-model"><span>Respond using</span><ModelPicker state={chat.state} choice={targetModel} disabled={blocked} settings={settings} onPick={async(connectionId,model)=>{setTargetModel({connectionId,model});return true}} onPicked={()=>{}}/></div>
+   {error&&<p className="chat-error" role="alert">{error}</p>}<div className="dialog-actions"><Button type="button" variant="ghost" disabled={pending} onClick={()=>setDialog(null)}>Cancel</Button><Button type="submit" className="primary-button" disabled={blocked||!targetModel||(dialog==='edit'&&!text.trim())}>{pending?'Starting…':dialog==='edit'?'Save and resend':'Regenerate'}</Button></div>
+  </form>}
+  {dialog==='append'&&<><SelectField label="Note to append to" value={noteId} onValueChange={setNoteId} options={notes.map(n=>({value:n.id,label:n.title||'Untitled'}))}/><div className="dialog-actions"><Button variant="ghost" onClick={()=>setDialog(null)}>Cancel</Button><Button className="primary-button" disabled={blocked||!noteId} onClick={()=>{if(commands.run('notes.append',{id:noteId,body:`\n\n${savedText}`})){setDialog(null);notify('Added to note')}}}>Append</Button></div></>}
+  {dialog==='details'&&<dl className="chat-response-details"><dt>Model</dt><dd>{m.reportedModel||m.model||'Not recorded for this response'}</dd><dt>Connection</dt><dd>{m.connectionName||'Not recorded'}</dd><dt>Provider</dt><dd>{m.provider||'Not recorded'}</dd><dt>Started</dt><dd>{new Date(m.createdAt).toLocaleString()}</dd>{m.finishedAt&&<><dt>Response time</dt><dd>{Math.max(0,(m.finishedAt-m.createdAt)/1000).toFixed(1)} seconds</dd></>}{m.usage&&<>{m.usage.inputTokens!==undefined&&<><dt>Input tokens</dt><dd>{m.usage.inputTokens.toLocaleString()}</dd></>}{m.usage.outputTokens!==undefined&&<><dt>Output tokens</dt><dd>{m.usage.outputTokens.toLocaleString()}</dd></>}{m.usage.cachedInputTokens!==undefined&&<><dt>Cached input tokens</dt><dd>{m.usage.cachedInputTokens.toLocaleString()}</dd></>}{m.usage.reasoningTokens!==undefined&&<><dt>Reasoning tokens</dt><dd>{m.usage.reasoningTokens.toLocaleString()}</dd></>}<dt>Usage source</dt><dd>Reported by provider</dd></>}<dt>Status</dt><dd>{m.status}</dd></dl>}
+ </DialogContent></Dialog>
+ {artifactEditor&&<ArtifactEditor content={selection||m.content} library={artifactLibrary} source={{conversationId:conversation.id,messageId:m.id,versionId:m.activeVersionId,conversationTitle:conversation.title,...(chat.project?{projectId:chat.project.id,projectName:chat.project.name}:{})}} onClose={()=>{setArtifactEditor(false);openingDialog.current=false;trigger.current?.focus()}} onCreated={a=>{setArtifactEditor(false);openingDialog.current=false;commands.run('artifacts.open',{artifactId:a.id,versionId:a.versions.at(-1)!.id})}}/>}</>
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@zq/ui",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test artifact-document-security.test.cjs artifact-document-view.test.cjs artifact-document-fonts.test.cjs"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./styles.css": "./styles.css"
+  },
+  "dependencies": {
+    "@aiden0z/pptx-renderer": "1.2.4",
+    "docx-preview": "0.4.0",
+    "exceljs": "4.4.0",
+    "jszip": "3.10.2",
+    "pdfjs-dist": "6.3.289"
+  },
+  "devDependencies": {
+    "playwright-core": "1.63.0"
+  }
+}

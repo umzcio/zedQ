@@ -1,0 +1,50 @@
+[
+  {
+    "packageHash": "5363c18afb2e51bef053a2521928d96eb629cdab0422fd1db5af029391f6ad45",
+    "source": {
+      "catalogId": "anthropics/skills/doc-coauthoring",
+      "revision": "d9df960e61fe2bafe9183e37de6f9f6b73b74087",
+      "contentHash": "0e0ca76c8a2355a988c658b9bcb9e4bcffa5090630e7760a907db82781f0b9a7"
+    }
+  },
+  {
+    "packageHash": "639448c22346b1408e342ad022ea11685667a5b9cc39dbe6d964b7b8ebfe81f1",
+    "source": {
+      "catalogId": "anthropics/skills/internal-comms",
+      "revision": "9869687dcf6deb6802ca88ac11e67b6f7278017a",
+      "contentHash": "604dc50a868b19d6cc52d3e75be21b98657483a4a808ea7a3665ccc2339469ed"
+    }
+  },
+  {
+    "packageHash": "3bd078a88eb861c7183df7928d751a1c8786aad66ffa1b430a5bac76895c0886",
+    "source": {
+      "catalogId": "anthropics/skills/docx",
+      "revision": "6e6f5b95c1de6e803cc07b214f5059b074d64e0c",
+      "contentHash": "2c235534254ec6d755b771b74652b236acd32fe7dbb17cd64d63546cb1551062"
+    }
+  },
+  {
+    "packageHash": "7e9822fcf332d65778da6fef400390ebb09ba63f2e44090aa8ecfacd04cc06f0",
+    "source": {
+      "catalogId": "anthropics/skills/pdf",
+      "revision": "6369f4649de69bd6857c9bc3b058a77206009238",
+      "contentHash": "4952252944d76c03598d46db9d47bc4450b532cb07076218fd50280dd8752b52"
+    }
+  },
+  {
+    "packageHash": "29032a29d4d583cae1d6d48fc60eb915b768cf96d4493037a43c86043a49dfd9",
+    "source": {
+      "catalogId": "anthropics/skills/xlsx",
+      "revision": "fe6471cc9b5b97aae0b576ccb92ffd9b0207589d",
+      "contentHash": "6a59734aa36132ff0e914d2ae616596f231a8bdf452d11fd30cef149c246ecff"
+    }
+  },
+  {
+    "packageHash": "eb7e9c63216d09f9d49e61c8d317c0e6c47479d3118113029cca935b7ab7fb44",
+    "source": {
+      "catalogId": "anthropics/skills/pptx",
+      "revision": "64529c8b3f35fe632b7256bd2f6d46e4b40160ce",
+      "contentHash": "b2b81d21aff3f4efeeb9dd527c037f305881776df2bf34527756e76951b644b4"
+    }
+  }
+]

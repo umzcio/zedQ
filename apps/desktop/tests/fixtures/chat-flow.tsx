@@ -1,0 +1,29 @@
+import React from 'react'
+import {createRoot} from 'react-dom/client'
+import {ModuleHostProvider} from '@zq/module-api'
+import {useChat} from '../../../../modules/chat/useChat'
+import ChatView from '../../../../modules/chat/ChatView'
+import '@zq/ui/styles.css'
+import '../../../../modules/chat/chat.css'
+import '../../src/shell.css'
+const ok=value=>Promise.resolve({ok:true,value}),fail=message=>Promise.resolve({ok:false,error:{code:'FIXTURE',message}})
+const skill={id:'skill',name:'Writing style',description:'',instructions:'Be concise.',files:[],createdAt:1,updatedAt:1}
+const queued=(id,text)=>({id,text,createdAt:1,connectionId:'conn',model:'fixture',attachments:[{id:'file',name:'Guide.txt',kind:'text',size:3,mime:'text/plain',preview:'Ref'}],context:[{id:'note',title:'Project note',body:'Saved note.'}],skillContext:[skill],tools:[]})
+let snapshot={skills:[skill],revision:1,error:'',projects:[],connections:[{id:'conn',provider:'anthropic',name:'Fixture',baseUrl:'https://api.anthropic.com',enabledModels:['fixture'],favoriteModels:[],modelLabels:{}}],defaultModel:{connectionId:'conn',model:'fixture'},conversations:[{id:'one',title:'First chat',connectionId:'conn',model:'fixture',createdAt:1,updatedAt:1,approvalMode:'auto',messages:[{id:'reply',role:'assistant',content:'Working on the document.',thinking:'',status:'streaming',createdAt:1,context:[],error:''}],queue:{items:[queued('q1','Second task'),queued('q2','Third task')],paused:false,error:''}},{id:'two',title:'Second chat',connectionId:'conn',model:'fixture',createdAt:1,updatedAt:1,messages:[],queue:{items:[],paused:false,error:''}}],chatView:{selected:'one',projectId:null,projectHome:false,positions:{}},drafts:{one:{text:'Next request',noteIds:[],tools:[],attachments:[],skillIds:['skill']}}}
+let subscriber;window.events=[]
+const publish=()=>{snapshot={...snapshot,revision:snapshot.revision+1};subscriber?.(snapshot)}
+const mutate=(id,fn)=>{snapshot={...snapshot,conversations:snapshot.conversations.map(c=>c.id===id?fn(c):c)};publish()}
+const host={workspace:{layout:{view:'Chat'},notes:[],tasks:[],settings:{},profile:{}},closing:false,registerFlush:()=>()=>{},commands:{register:()=>()=>{},run:()=>true},navigate:()=>{},notify:message=>window.events.push(['notice',message]),services:{chat:{
+ load:()=>ok(snapshot),subscribe:fn=>{subscriber=fn;return()=>{}},toolOptions:()=>ok([]),inspectContext:()=>ok({referenceBytes:0,conversationBytes:0,error:''}),saveDraft:input=>{window.events.push(['draft',input]);return ok(null)},saveChatView:()=>ok(null),
+ enqueueMessage:async input=>{window.events.push(['enqueue',input]);if(window.holdEnqueue)await new Promise(resolve=>{window.finishEnqueue=resolve});if(window.failEnqueue)return fail('Could not queue this message. Try again.');mutate(input.conversationId,c=>({...c,queue:{...c.queue,items:[...c.queue.items,queued('q'+Date.now(),input.text)]}}));return ok(snapshot)},
+ send:input=>{window.events.push(['send',input]);return ok(snapshot)},
+ updateQueuedMessage:async input=>{window.events.push(['queueMutation',input]);if(window.holdQueueMutation)await new Promise(resolve=>{window.finishQueueMutation=resolve});if(window.failQueueMutation)return fail('Could not update this queued message. Try again.');mutate(input.conversationId,c=>{let items=[...c.queue.items];const at=items.findIndex(i=>i.id===input.id);if(input.remove)items.splice(at,1);else if(input.text!==undefined)items[at]={...items[at],text:input.text};else if(input.move){const to=at+(input.move==='up'?-1:1);[items[at],items[to]]=[items[to],items[at]]}return {...c,queue:{...c.queue,items}}});return ok(snapshot)},
+ setQueuePaused:input=>{window.events.push(['pause',input]);mutate(input.conversationId,c=>({...c,queue:{...c.queue,paused:input.paused}}));return ok(snapshot)},
+ stop:id=>{window.events.push(['stop',id]);mutate(id,c=>({...c,messages:c.messages.map(m=>({...m,status:'stopped'})),queue:{...c.queue,paused:true}}));return ok(snapshot)},
+ setApprovalMode:input=>{window.events.push(['mode',input]);mutate(input.conversationId,c=>({...c,approvalMode:input.mode}));return ok(snapshot)},
+ respondToInteraction:async input=>{window.events.push(['answer',input]);if(window.holdAnswer)await new Promise(resolve=>{window.finishAnswer=resolve});if(window.failAnswer)return fail('Could not send your answer. Try again.');mutate(input.conversationId,c=>({...c,messages:c.messages.map(m=>({...m,interactions:m.interactions?.map(i=>i.id===input.id?{...i,status:input.decision==='deny'?'denied':'answered',answer:input.answer}:i)}))}));return ok(snapshot)},
+ },voice:{status:()=>ok({}),settings:()=>ok({})},clipboard:{writeText:text=>{window.events.push(['copy',text]);return ok(null)}}}}
+window.addDecision=(kind='clarification')=>mutate('one',c=>({...c,messages:c.messages.map(m=>({...m,status:'streaming',interactions:[{id:'decision-'+Date.now(),kind,question:kind==='clarification'?'Who is the audience?':'Run this tool action?',options:kind==='clarification'?['Executives','Engineers']:undefined,tool:kind==='approval'?'create_document':undefined,detail:kind==='approval'?'Create a Word document from the requested outline.':undefined,status:'waiting',createdAt:Date.now()}]})),queue:{...c.queue,paused:true}}))
+window.finishRun=()=>mutate('one',c=>({...c,messages:c.messages.map(m=>({...m,status:'complete'}))}))
+function Fixture(){const chat=useChat();window.chatState=chat;return <div style={{height:'100vh',display:'flex',flexDirection:'column'}}><nav><button onClick={()=>chat.select('one')}>First chat</button><button onClick={()=>chat.select('two')}>Second chat</button></nav><ChatView chat={chat} notes={[]} closing={false} settings={()=>{}} prepareNotes={async()=>{}}/></div>}
+createRoot(document.getElementById('root')).render(<ModuleHostProvider value={host}><Fixture/></ModuleHostProvider>)

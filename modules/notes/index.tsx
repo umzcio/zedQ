@@ -1,0 +1,58 @@
+import './styles.css'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useHost, useWorkspaceField, useLayoutField, useCommand, ModuleSurface, columns, projects, type Note, type Task, type Status } from '@zq/module-api'
+import { Button, Dialog, DialogContent, DialogTitle, DialogDescription, Input, Textarea, SelectField, IconButton, ProjectTag, ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem } from '@zq/ui'
+import { House, NotePencil, Kanban, MagnifyingGlass, Plus, ArrowUpRight, ArrowRight, Sun, Moon, Desktop, GearSix, SidebarSimple, CaretRight, Command, X, Columns, PushPin, FileText, Check, Circle, FunnelSimple, List, Trash, LinkSimple, Sparkle } from '@phosphor-icons/react'
+import { FolderSimple, FolderOpen, SquaresFour } from '@phosphor-icons/react'
+import { RenameNoteDialog } from './NoteActions'
+import { NoteContextMenu, ChatSourceLinks, ArtifactAttachments } from '@zq/ui'
+import WorkspaceTabs from './WorkspaceTabs'
+import { restoreTabState, openTab } from './tab-state'
+import { useLocalFiles, LocalFileEditor } from './LocalFiles'
+function NotesRoot(){
+ const host=useHost(),{workspace:saved,closing,saveStatus,initialFiles,onFilesChange,onFileFlush,focusMode,setFocusMode}=host
+ const [notes,setNotes]=useWorkspaceField('notes'),tasks=saved.tasks
+ const [layout,setLayout]=useWorkspaceField('layout')
+ const view=layout.view
+ const setView=host.navigate,setNotice=host.notify
+ const [tabState,setTabState]=useState(()=>restoreTabState(saved.layout??{},saved.notes.map(n=>n.id),initialFiles.map(f=>f.id)))
+ const selectedNote=tabState.active?.startsWith('note:')?tabState.active.slice(5):''
+ const [split,setSplit]=useLayoutField('split')
+ const [noteQuery,setNoteQuery]=useState(''),[noteFilter,setNoteFilter]=useState('All notes')
+ const [renameTarget,setRenameTarget]=useState<{id:string;title:string}|null>(null)
+ const activeFileId=tabState.active?.startsWith('file:')?tabState.active.slice(5):null
+ const local=useLocalFiles(initialFiles,onFilesChange)
+ useLayoutEffect(()=>{onFileFlush(local.flush)},[onFileFlush,local.flush])
+ const activeFile=local.files.find(f=>f.id===activeFileId)
+ async function openFile(){const file=await local.open();if(file){setTabState(s=>openTab(s,`file:${file.id}`));setView('Notes');setFocusMode(false)}}
+ const note=notes.find(n=>n.id===selectedNote)
+ const editor=useRef<HTMLTextAreaElement>(null)
+ useEffect(()=>{if(view==='Notes'&&note?.title==='Untitled'&&!note.body)editor.current?.focus()},[selectedNote,view])
+ useLayoutEffect(()=>{setLayout(old=>({...old,selectedNote,tabs:tabState.order.filter(k=>k.startsWith('note:')).map(k=>k.slice(5)),tabOrder:tabState.order,activeFileId}))},[tabState,selectedNote,activeFileId,setLayout])
+ function openNote(id:string){if(!notes.some(n=>n.id===id))return;setFocusMode(false);setTabState(s=>openTab(s,`note:${id}`));setView('Notes')}
+ function newNote(body=''){const id=crypto.randomUUID();setNotes(n=>[{id,title:'Untitled',body,project:'',updated:'Just now',pinned:false},...n]);setTabState(s=>openTab(s,`note:${id}`));setView('Notes');setFocusMode(false)}
+ function renameNote(id:string){if(closing)return;const target=notes.find(n=>n.id===id);if(target)setRenameTarget({id:target.id,title:target.title})}
+ function toggleNotePin(id:string){if(closing)return;setNotes(ns=>ns.map(n=>n.id===id?{...n,pinned:!n.pinned}:n))}
+ function updateNote(patch:Partial<Note>){if(note)setNotes(ns=>ns.map(n=>n.id===note.id?{...n,...patch,updated:'Just now'}:n))}
+ const setTaskEdit=(task:Task)=>host.commands.run('tasks.edit',task)
+ const newTask=()=>host.commands.run('tasks.new',undefined)
+ const moveTask=(id:string,status:Status)=>host.commands.run('tasks.move',{id,status})
+ useCommand('notes.attachArtifact',({id,artifact})=>{if(id==='new'){const noteId=crypto.randomUUID();setNotes(ns=>[{id:noteId,title:artifact.name,body:'',project:'',updated:'Just now',pinned:false,artifacts:[artifact]},...ns]);setTabState(s=>openTab(s,`note:${noteId}`));setView('Notes');setFocusMode(false);return}const target=notes.find(n=>n.id===id);if(!target){host.notify('That note no longer exists.');return}if((target.artifacts?.length??0)>=50){host.notify('A note can have up to 50 artifacts.');return}setNotes(ns=>ns.map(n=>n.id===id?{...n,artifacts:[...(n.artifacts??[]).filter(a=>a.artifactId!==artifact.artifactId||a.versionId!==artifact.versionId),artifact],updated:'Just now'}:n));openNote(id)});
+ useCommand('notes.append',({id,body})=>{if(!notes.some(n=>n.id===id)){host.notify('That note no longer exists.');return}setNotes(ns=>ns.map(n=>n.id===id?{...n,body:n.body+body,updated:'Just now'}:n));openNote(id)});
+ useCommand('notes.new',body=>newNote(body));useCommand('notes.open',openNote);useCommand('notes.rename',renameNote);useCommand('notes.pin',toggleNotePin)
+ useCommand('notes.split',id=>{openNote(id);setSplit(true)})
+ useCommand('files.open',()=>void openFile());useCommand('files.save',kind=>{if(activeFileId)void local.action(activeFileId,kind);else setNotice(saveStatus)})
+ function noteEditor(){return note?<div className="editor-pane"><div className="editor-toolbar"><div className="breadcrumb"><FileText size={14}/><span>{note.project||'Personal notes'}</span><CaretRight size={12}/><span>Note</span></div><div className="toolbar-actions"><IconButton label={note.pinned?'Unpin note':'Pin note'} active={note.pinned} onClick={()=>updateNote({pinned:!note.pinned})}><PushPin size={17}/></IconButton><IconButton label="Create linked task" onClick={()=>{const selection=editor.current?.value.substring(editor.current.selectionStart,editor.current.selectionEnd);setTaskEdit({id:crypto.randomUUID(),title:selection?.slice(0,120)||note.title,description:'',project:note.project,status:'Inbox',priority:'Normal',noteId:note.id})}}><Kanban size={17}/></IconButton><IconButton label={focusMode?'Exit focus mode':'Focus note'} active={focusMode} onClick={()=>setFocusMode(f=>!f)}><SidebarSimple size={17}/></IconButton></div></div><div className="writing-surface"><div className="note-meta"><span className="mini-label">SCRATCHPAD</span><SelectField label="Note project" value={note.project} onValueChange={project=>updateNote({project})} options={[{value:'',label:'Personal'},...projects]}/></div><input className="note-title" aria-label="Note title" value={note.title} onChange={e=>updateNote({title:e.target.value})} placeholder="Untitled"/><ArtifactAttachments items={note.artifacts??[]} onChange={artifacts=>updateNote({artifacts})}/><textarea ref={editor} className="note-body" aria-label="Note content" value={note.body} onChange={e=>updateNote({body:e.target.value})} placeholder="Start anywhere. This space is yours." spellCheck={false}/><ChatSourceLinks text={note.body}/></div><footer className="editor-footer"><span>{note.body.trim()?note.body.trim().split(/\s+/).length:0} words</span><span>Plain text <span className="separator">·</span> {saveStatus} <Check size={12}/></span></footer></div>:<div className="empty-state"><p>A little space to think.</p><Button onClick={()=>newNote()}>New note</Button></div>}
+ const p={notes,noteQuery,setNoteQuery,noteFilter,setNoteFilter,selectedNote,openNote,newNote,openFile,renameNote,toggleNotePin,disabled:closing}
+ const filteredNotes=notes.filter(n=>(noteFilter==='All notes'||noteFilter==='Pinned'&&n.pinned||n.project===noteFilter)&&(n.title+n.body).toLowerCase().includes(noteQuery.toLowerCase()))
+ return <><ModuleSurface slot="sidebar"><>
+     <div className="context-links local-file-open"><button onClick={p.openFile}><FolderOpen size={17}/><span>Open file…</span><small>⌘O</small></button></div>
+     <div className="context-search"><MagnifyingGlass size={15}/><input aria-label="Search notes" placeholder="Find a note…" value={p.noteQuery} onChange={e=>p.setNoteQuery(e.target.value)}/></div>
+     <nav className="context-links" aria-label="Note collections">{(['All notes','Pinned'] as const).map(label=><button key={label} className={p.noteFilter===label?'selected':''} onClick={()=>p.setNoteFilter(label)}>{label==='Pinned'?<PushPin size={17}/>:<NotePencil size={17}/>}<span>{label}</span><small>{p.notes.filter(n=>label==='All notes'||n.pinned).length}</small></button>)}</nav>
+     <div className="context-project-filter"><FolderSimple size={14}/><SelectField label="Filter notes by project" value={projects.includes(p.noteFilter)?p.noteFilter:''} onValueChange={value=>p.setNoteFilter(value||'All notes')} options={[{value:'',label:'All projects'},...projects]}/></div>
+     <div className="context-section-label">{p.noteFilter==='All notes'?'YOUR SCRATCHPADS':p.noteFilter.toUpperCase()} <span>{filteredNotes.length}</span></div>
+     <div className="context-note-list">{filteredNotes.map(n=><NoteContextMenu key={n.id} note={n} onOpen={p.openNote} onRename={p.renameNote} onTogglePin={p.toggleNotePin} disabled={p.disabled}><button onKeyDown={e=>{if(e.key==='F2'){e.preventDefault();p.renameNote(n.id)}}} className={`note-list-item ${p.selectedNote===n.id?'selected':''}`} onClick={()=>p.openNote(n.id)}><div><FileText size={14}/><strong title={n.title||'Untitled'}>{n.title||'Untitled'}</strong>{n.pinned&&<PushPin size={12}/>}</div></button></NoteContextMenu>)}{!filteredNotes.length&&<p className="context-empty">No notes here yet.</p>}</div></></ModuleSurface><ModuleSurface><div className={`notes-workspace ${focusMode?'focused':''}`}><div className="note-main"><div className="tabs"><WorkspaceTabs onRenameNote={renameNote} onToggleNotePin={toggleNotePin} state={tabState} onChange={setTabState} documents={[...notes.map(n=>({key:`note:${n.id}`,title:n.title||'Untitled',note:n})),...local.files.map(f=>({key:`file:${f.id}`,title:f.name,path:f.path,dirty:f.body!==f.savedBody}))]} onNew={()=>newNote()} disabled={closing}/><IconButton label="Toggle tasks split" active={split} onClick={()=>setSplit(s=>!s)}><Columns size={18}/></IconButton></div><div className={`editor-and-board ${split?'is-split':''}`}>{activeFile?<LocalFileEditor busy={local.busy} file={activeFile} error={local.error} status={local.status} onEdit={body=>local.edit(activeFile.id,body)} onAction={kind=>void local.action(activeFile.id,kind)}/>:noteEditor()}{split&&<aside className="split-board"><header><span><Kanban size={17}/> Tasks alongside</span><IconButton label="Close tasks split" onClick={()=>setSplit(false)}><X size={16}/></IconButton></header><div className="split-task-list">{tasks.filter(t=>t.status!=='Done').map(t=><div className="split-task" key={t.id}><button className="complete-circle" aria-label={`Complete ${t.title}`} onClick={()=>moveTask(t.id,'Done')}><Circle size={17}/></button><button onClick={()=>setTaskEdit({...t})}><strong>{t.title}</strong><span>{t.project} · {t.status}</span></button></div>)}<button className="quiet-add" onClick={()=>newTask()}><Plus size={15}/> Add task</button></div></aside>}</div></div></div>{local.error&&!activeFile&&<div className="file-error" role="alert">{local.error}</div>}</ModuleSurface>
+ {renameTarget&&<RenameNoteDialog key={renameTarget.id} note={renameTarget} disabled={closing} onClose={()=>setRenameTarget(null)} onSave={(id,title)=>{if(closing)return;setNotes(ns=>ns.map(n=>n.id===id?{...n,title,updated:'Just now'}:n));setRenameTarget(null);setNotice('Note renamed')}}/>}
+</>
+}
+export default {Root:NotesRoot}

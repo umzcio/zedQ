@@ -1,0 +1,49 @@
+/* Settings uses the app's neutral surfaces and shared controls. */
+.settings-page{width:100%;max-width:880px;margin:0 auto;padding:42px 44px 60px;color:var(--text)}
+.settings-panel[hidden]{display:none!important}
+.settings-panel-header{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin:0 0 28px}
+.settings-panel-header>div{flex:1;min-width:0}
+.settings-panel-header h1,.settings-panel-header h2{margin:0;font-size:23px;line-height:1.3;font-weight:550;letter-spacing:-.65px;color:var(--text)}
+.settings-panel-header p{margin:8px 0 0;color:var(--muted);font-size:13px;line-height:1.6}
+.settings-panel-header>button,.settings-panel-header>div:last-child:not(:first-child){flex:none}
+.settings-panel-header>button{margin-top:2px;height:34px;font-size:12px;gap:7px;white-space:nowrap}
+.settings-navigation{display:grid;gap:3px}
+.settings-navigation>button{font-size:13px!important;min-height:35px!important}
+.settings-resource-row{display:flex;align-items:center;gap:13px;padding:17px 0;border-bottom:1px solid var(--line)}
+.settings-resource-icon{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:32px;height:34px;color:var(--muted)}
+.settings-resource-icon>svg{width:21px;height:21px}
+.settings-page .connection-list,.settings-page .module-version-list{display:grid;margin:0;border-top:1px solid var(--line)}
+.settings-page .connection-row:first-child{border-top:0}
+.settings-page .connection-summary{padding:0;gap:4px}
+.settings-page .connection-summary strong,.settings-page .module-version-row strong{font-size:14px;font-weight:500;line-height:1.5}
+.settings-page .connection-summary span,.settings-page .module-version-row span,.settings-page .module-version-row small{font-size:12px;line-height:1.6;color:var(--muted)}
+.settings-page .connection-row-actions{display:flex;gap:8px;align-items:center}
+.settings-page .connection-row-actions>button{font-size:12px;height:32px;color:var(--muted);padding:0 10px}
+.settings-page .settings-more-button{height:30px;width:30px;padding:0;flex-shrink:0;color:var(--muted)}
+.settings-page .settings-more-button>svg{width:20px;height:20px}
+.settings-page .module-version-row>div{flex:1;display:flex;flex-direction:column;gap:3px;min-width:0}
+.settings-page .module-version-row>span{flex:none}
+.settings-page .module-version-row small[role=alert]{color:var(--color-destructive)}
+.settings-page .settings-panel-note,.settings-page .connection-check-result{font-size:12px;color:var(--muted);line-height:1.7;margin:20px 0 0}
+.connection-check-result>p{margin:0}
+.connection-check-result summary{cursor:pointer;display:list-item;width:fit-content;margin-top:5px;color:var(--text);font-size:12px}
+.settings-page .connection-result{font-size:12px;margin-top:18px}
+.settings-page .connection-empty{border:1px dashed var(--line);border-radius:9px;padding:30px 22px;text-align:center;font-size:13px;line-height:1.7}
+.settings-page .module-settings-heading{flex-wrap:nowrap}
+.settings-page .module-settings-heading>div{min-width:0}
+.settings-page button{transition:background-color 130ms ease,color 130ms ease}
+@media(max-width:1100px){.settings-page{padding:34px 32px 48px}.settings-panel-header{gap:18px}}
+@media(max-width:850px){.settings-page{padding:28px 24px 44px}.settings-panel-header h1,.settings-panel-header h2{font-size:21px}.settings-panel-header{gap:14px}.settings-resource-row{gap:9px}}
+@media(max-width:500px){.settings-panel-header{flex-wrap:wrap}.settings-page .connection-row-actions{gap:3px}.settings-page .connection-row{flex-wrap:nowrap}.settings-page .connection-summary{flex-basis:auto}.settings-resource-icon{width:25px}}
+@media(prefers-reduced-motion:reduce){.settings-page button{transition:none}}
+
+.settings-panel-footer{margin-top:20px;font-size:12px;line-height:1.6;color:var(--muted)}
+.module-update-status{color:var(--accent-text)!important;font-size:11px!important}
+.connection-model-list{max-height:160px;overflow:auto;list-style:none;padding:8px 0;display:grid;gap:5px;font-size:12px;overflow-wrap:anywhere}
+.settings-page .module-settings-heading{align-items:flex-start}
+.settings-page .settings-resource-row{padding:17px 0;gap:13px}
+
+/* Preserve the original Appearance card layout and its responsive spacing. */
+.settings-page.settings-page-appearance{max-width:970px;padding:0}
+
+.voice-settings{max-width:720px}.voice-setting-row{display:flex;align-items:center;gap:12px;margin:18px 0}.voice-setting-row>label{width:120px;flex:none;font-size:13px}.voice-setting-row .zq-select-trigger{max-width:360px;flex:1}.voice-engine-status{padding:12px 0;font-size:13px}.voice-engine-status p,.voice-test p{color:var(--muted);font-size:13px;line-height:1.5}.voice-test{margin-top:28px;padding-top:22px;border-top:1px solid var(--border)}.voice-test h3{font-size:15px;margin:0 0 8px}.voice-test textarea{width:100%;resize:vertical;margin-top:12px}.voice-test-actions{display:flex;gap:6px;margin-top:8px}

@@ -1,0 +1,13 @@
+{
+  "id": "zq.hq",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "title": "HQ",
+  "view": "HQ",
+  "icon": "home",
+  "capabilities": [
+    "workspace.read",
+    "workspace.write",
+    "commands"
+  ]
+}

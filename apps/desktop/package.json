@@ -1,0 +1,94 @@
+{
+  "name": "@zq/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && node ../../scripts/build-keychain.mjs && node ../../scripts/build-voice.mjs && node ../../scripts/build-modules.mjs && vite build",
+    "start": "electron .",
+    "test": "node --test tests/*.test.cjs",
+    "pack": "npm run build && electron-builder --mac dir --arm64",
+    "check:runtime": "electron . --runtime-check",
+    "rebuild:native": "electron-rebuild -f -w node-pty -v 44.2.0"
+  },
+  "dependencies": {
+    "@fontsource/noto-sans": "5.3.0",
+    "@phosphor-icons/react": "2.1.10",
+    "@zq/module-api": "*",
+    "@zq/providers": "*",
+    "@zq/ui": "*",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "docx": "9.7.1",
+    "exceljs": "4.4.0",
+    "fontkit": "2.0.4",
+    "js-yaml": "4.3.2",
+    "jszip": "3.10.2",
+    "node-pty": "1.1.0",
+    "pdfjs-dist": "6.3.289",
+    "pdfkit": "0.20.2",
+    "pptxgenjs": "4.0.1",
+    "radix-ui": "1.6.7",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
+    "sax": "1.6.1",
+    "tailwind-merge": "3.6.0",
+    "tw-animate-css": "1.4.0",
+    "yauzl": "3.4.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "26.5.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "@vitejs/plugin-react": "6.1.1",
+    "electron": "44.2.0",
+    "electron-builder": "26.15.3",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2",
+    "vite": "8.2.2"
+  },
+  "description": "zQ personal desktop workspace",
+  "author": "Zach",
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "dev.zedq.desktop",
+    "productName": "zQ",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "bundled-modules/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/node-pty/**/*"
+    ],
+    "mac": {
+      "target": "dir",
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "minimumSystemVersion": "13.0",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Record dictation only when you press the microphone button.",
+        "NSSpeechRecognitionUsageDescription": "Transcribe your recording on this Mac when you choose on-device dictation."
+      }
+    },
+    "npmRebuild": false,
+    "extraResources": [
+      {
+        "from": "native/bin/provider-keychain",
+        "to": "native/provider-keychain"
+      },
+      {
+        "from": "native/bin/voice-transcribe",
+        "to": "native/voice-transcribe"
+      }
+    ]
+  }
+}

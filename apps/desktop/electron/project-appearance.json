@@ -1,0 +1,16 @@
+{
+ "icons": ["FolderSimple","Anchor","Aperture","AppleLogo","Archive","BeerStein","Bell","Bird","BookOpen","BookmarkSimple","Cube","Briefcase","Bug","Buildings","Calculator","CalendarBlank","Camera","Car","Cat","ChefHat","ClipboardText","Clock","Code","Coffee","Compass","DiamondsFour","Cpu","Database","Diamond","Dog","CurrencyDollar","Drop","FilmStrip","Fish","Flag","Flame","Flask","GameController","SketchLogo","Eyeglasses","Globe","GraduationCap","Headphones","Heart","House","Hourglass","Key","Laptop","Leaf","Lightbulb","Envelope","Microscope","Monitor","Moon","Mountains","MusicNotes","Palette","Phone","PushPin","Airplane","Play","Rocket","Sailboat","Scales","Shield","TShirt","Smiley","Sparkle","Star","Stethoscope","Sun","Sword","Tag","Train","Tree","Truck","Umbrella","LockSimple","User","ForkKnife","VideoCamera","Wrench","Lightning"],
+ "colors": [
+  {"id":"neutral","label":"Default","light":"#717171","dark":"#a1a1a1"},
+  {"id":"gray","label":"Gray","light":"#667085","dark":"#98a2b3"},
+  {"id":"red","label":"Red","light":"#c73f43","dark":"#ee7478"},
+  {"id":"orange","label":"Orange","light":"#bb601d","dark":"#f0a05d"},
+  {"id":"yellow","label":"Yellow","light":"#967011","dark":"#e9c353"},
+  {"id":"lime","label":"Lime","light":"#628320","dark":"#a0cd59"},
+  {"id":"teal","label":"Teal","light":"#268479","dark":"#65beb1"},
+  {"id":"green","label":"Green","light":"#2e8b46","dark":"#66c875"},
+  {"id":"blue","label":"Blue","light":"#3378c6","dark":"#72adf2"},
+  {"id":"purple","label":"Purple","light":"#8655c5","dark":"#b18aea"},
+  {"id":"pink","label":"Pink","light":"#bd3987","dark":"#e77dbd"}
+ ]
+}

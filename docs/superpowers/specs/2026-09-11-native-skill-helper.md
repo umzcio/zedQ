@@ -1,0 +1,9 @@
+# Native skill helper prototype
+
+Approved direction: prove a bundled, sandboxed macOS helper before adding container or remote backends. This is a development prototype, not an enabled Chat feature. Do not change the shipping manifest/capabilities or package it into the regular app yet.
+
+A separate prototype app contains a signed XPC service and a pinned, relocatable CPython with pinned document dependencies. Client transports bounded JSON bytes, not arbitrary host paths. The service writes request inputs into a fresh private directory and launches its bundled interpreter as an inherited sandboxed child. No network entitlement, keychain access group, user document entitlement or shared app group. Verify actual denied access using synthetic canaries only, not user secrets. Explore a further restrictive worker policy if App Sandbox alone permits unnecessary processes/paths; document any unsupported/deprecated API dependency honestly. OS enforcement, not Python monkey patches or prompts, must protect host resources.
+
+Execute Python document workflows in the isolated worker: DOCX create/edit and preserving unrelated content, XLSX formulas plus explicit distinction between formulas and calculated results, PPTX create/edit, PDF merge/split/fill. OCR and imported JavaScript/Linux toolchains are separate compatibility questions, not silently supported. Use original request bytes and original package resource paths where staged. Never rewrite an imported skill or require custom SKILL.md frontmatter.
+
+Tests only in disposable workspaces. Limit code/input/output/log sizes, wall time, CPU and file output; verify cancellation and child lifetime. Report memory/download/startup measurements and actual sandbox gaps. Only after these results should Chat integration be considered. Remove unfinished Docker UI/API/tests from the prior approach.

@@ -1,0 +1,12 @@
+# Artifact right pane — 2026-09-10
+
+User-authorized design: rendered artifacts beside the live conversation like supplied Claude/ChatGPT screenshots. Replace Chat preview modal with resizable right-hand pane; use actual file formatting, slim toolbar with name/type, zoom, download, version selector, expand and close. Preserve compact existing app/sidebar and original Appearance. Use shared shadcn menus with right-click and visible menu parity. Escape closes top dialog/menu first, then pane; focus returns. Default pane about half content width, keyboard/pointer resizing, expand at narrow sizes. No unrelated sidebar redesign.
+
+1. Shared formatted document viewer: actual PDF pages, DOCX styles/pages, XLSX sheets and PPTX slides from file bytes; isolated rendering, no remote fetch or active content. Existing content fallback is explicitly labeled when format unsupported. Check current primary library docs. Keep imports/build compatible.
+2. Native bounded artifact document bytes API and public bridge; preserve immutable version selection and existing save/attach/version actions.
+3. Chat controller and layout pane; file cards and library open pane instead of dialog; auto-open newly completed generated files only in active conversation (never steal focus from another chat). Existing Notes/Tasks open via public artifact command. Keep source chat available.
+4. Verify actual styled DOCX/PDF/Excel/PowerPoint fixtures, pane resizing/close/Escape/version/download, continue chat with pane open; tests/typecheck/package; isolated workspace restore.
+
+Ownership: shared viewer agent owns packages/ui/artifact-document-view* plus exports/dependency installs; root owns Chat pane/controller and native/public bridge. No git metadata exists; work in authorized current tree, preserve normal user data. User's explicit right-pane direction supplies approval; no repeat approval gate.
+
+Implementation and review completed. Native full-ZIP validator and immutable byte API are integrated; shared formatted viewer and guarded Chat pane are complete. Initial document readiness waits for fonts/layout, and zoomed Word pages preserve their left scroll edge. Desktop suite442passed/1existing skip; viewer tests3passed; controller navigation/focus scenarios14passed. Packaged checks and a live Ollama generated Word artifact succeeded. Final packaged cold/warm first-paint checks passed. The isolated test store is preserved at `.local-data/artifact-pane-ui-verified`; the original isolated workspace was restored.

@@ -1,0 +1,8 @@
+import {useState} from 'react'
+import {useHost,type Artifact,type ArtifactVersion} from '@zq/module-api'
+import {Dialog,DialogContent,DialogTitle,DialogDescription,SelectField,Button} from '@zq/ui'
+export default function ArtifactAttachDialog({artifact,version,kind,onClose}:{artifact:Artifact;version:ArtifactVersion;kind:'note'|'task';onClose:()=>void}){
+ const {workspace,commands,closing,notify}=useHost(),[target,setTarget]=useState('new')
+ function attach(){const ref={artifactId:artifact.id,versionId:version.id,name:artifact.name};let ok=false;if(kind==='note')ok=commands.run('notes.attachArtifact',{id:target,artifact:ref});else if(target==='new')ok=commands.run('tasks.new',{title:artifact.name,description:'',artifacts:[ref]});else ok=commands.run('tasks.attachArtifact',{id:target,artifact:ref});if(ok){onClose()}else notify('That module is not available.');}
+ return <Dialog open onOpenChange={open=>{if(!open)onClose()}}><DialogContent><DialogTitle>Attach to {kind==='note'?'Notes':'Tasks'}</DialogTitle><DialogDescription>{artifact.name} · Version {version.number}. Later revisions won’t change this attachment automatically.</DialogDescription><SelectField label={kind==='note'?'Note':'Task'} value={target} onValueChange={setTarget} options={[{value:'new',label:kind==='note'?'Create a new note':'Create a new task'},...(kind==='note'?workspace.notes:workspace.tasks).map(item=>({value:item.id,label:item.title||'Untitled'}))]}/><div className="dialog-actions"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={closing} onClick={attach}>Attach version {version.number}</Button></div></DialogContent></Dialog>
+}

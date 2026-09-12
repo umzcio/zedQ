@@ -1,0 +1,8 @@
+.chat-skill-activity{margin:4px 0 8px}
+.chat-skill-activity .chat-tool-summary>svg{flex-shrink:0}
+.chat-skill-activity .chat-tool-summary>span{overflow-wrap:anywhere;min-width:0}
+.chat-skill-details{padding:4px 0 4px 22px;color:var(--muted);font-size:11px;line-height:1.6;max-height:220px;overflow:auto;overflow-wrap:anywhere}
+.chat-skill-details p{margin:0 0 4px}
+.chat-skill-details p:first-child{color:var(--text)}
+.chat-skill-actions{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.chat-skill-actions button{font-size:11px;height:26px;padding:0 7px}

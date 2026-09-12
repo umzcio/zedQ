@@ -1,0 +1,31 @@
+import { useRef, useState, type ReactElement } from 'react'
+import { PencilSimple, PushPin, ArrowSquareOut } from '@phosphor-icons/react'
+import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from './components/ui/context-menu'
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from './components/ui/dialog'
+import { Input } from './components/ui/input'
+import { Button } from './components/ui/button'
+import type { Note } from './data'
+
+type Actions={note:Pick<Note,'id'|'title'|'pinned'>;onRename:(id:string)=>void;onTogglePin:(id:string)=>void}
+export function NoteMenuItems({note,onRename,onTogglePin}:Actions){
+ return <><ContextMenuItem onSelect={()=>onRename(note.id)}><PencilSimple size={14}/>Rename…</ContextMenuItem><ContextMenuItem onSelect={()=>onTogglePin(note.id)}><PushPin size={14}/>{note.pinned?'Unpin note':'Pin note'}</ContextMenuItem></>
+}
+export function NoteContextMenu({note,onRename,onTogglePin,onOpen,disabled=false,children}:Actions&{onOpen:(id:string)=>void;disabled?:boolean;children:ReactElement}){
+ const openingDialog=useRef(false)
+ return <ContextMenu><ContextMenuTrigger asChild disabled={disabled}>{children}</ContextMenuTrigger>{!disabled&&<ContextMenuContent aria-label={`Note actions for ${note.title||'Untitled'}`} onCloseAutoFocus={event=>{if(openingDialog.current){event.preventDefault();openingDialog.current=false}}}>
+  <ContextMenuItem onSelect={()=>onOpen(note.id)}><ArrowSquareOut size={14}/>Open note</ContextMenuItem>
+  <ContextMenuSeparator/>
+  <NoteMenuItems note={note} onRename={id=>{openingDialog.current=true;onRename(id)}} onTogglePin={onTogglePin}/>
+ </ContextMenuContent>}</ContextMenu>
+}
+export function RenameNoteDialog({note,onClose,onSave,disabled=false}:{note:Pick<Note,'id'|'title'>;onClose:()=>void;onSave:(id:string,title:string)=>void;disabled?:boolean}){
+ const [title,setTitle]=useState(note.title)
+ const input=useRef<HTMLInputElement>(null)
+ return <Dialog open onOpenChange={open=>{if(!open)onClose()}}><DialogContent inert={disabled} className="rename-note-dialog" onOpenAutoFocus={event=>{event.preventDefault();input.current?.focus();input.current?.select()}}>
+  <DialogTitle>Rename note</DialogTitle><DialogDescription>Give this note a name you’ll recognize.</DialogDescription>
+  <form onSubmit={event=>{event.preventDefault();if(!disabled&&title.trim())onSave(note.id,title.trim())}}>
+   <label htmlFor="rename-note-title">Name</label><Input ref={input} id="rename-note-title" aria-label="Note name" value={title} maxLength={1024} onChange={event=>setTitle(event.target.value)} disabled={disabled}/>
+   <div className="dialog-actions"><Button type="button" variant="ghost" onClick={onClose} disabled={disabled}>Cancel</Button><Button type="submit" className="primary-button" disabled={disabled||!title.trim()}>Rename</Button></div>
+  </form>
+ </DialogContent></Dialog>
+}
