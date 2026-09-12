@@ -35,3 +35,11 @@ jobs:
         run: npm run test:ui
       - name: Check TypeScript
         run: npm run typecheck
+      - name: Build signed document helper
+        run: npm run documents:build
+      - name: Verify fixed document renderer
+        run: .local-data/document-helper/runtime/python/bin/python3.12 -I -B apps/desktop/native/document-helper/test_renderer.py
+      - name: Verify native document boundary and Chat lifecycle
+        run: ZQ_TEST_DOCUMENT_HELPER=1 node --test --test-concurrency=1 apps/desktop/tests/document-helper-native.test.cjs apps/desktop/tests/chat-document-helper.test.cjs
+      - name: Verify native document fonts in preview
+        run: ZQ_TEST_DOCUMENT_HELPER=1 node --test packages/ui/artifact-document-fonts.test.cjs

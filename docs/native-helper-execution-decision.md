@@ -2,6 +2,8 @@
 
 Decision recorded 2026-09-12. This applies before integrating the native prototype with Chat.
 
+Implementation follow-through: the separate [fixed document helper](document-helper.md) now implements the structured path described below. The generic prototype remains outside Chat. Release signing/notarization is still a distribution requirement.
+
 ## Shipping scope
 
 Use a supported App Sandbox XPC helper for **fixed zQ-owned document operations**, accepting structured arguments and document bytes. Keep the proven pinned Python/library profile. This is the next implementation target, not a capability enabled by this change.

@@ -21,7 +21,7 @@ export function ChatToolPicker({options,selected,onChange,disabled}:{options:Cha
 }
 function activityLabel(tool:ChatToolActivity){
  const running=tool.status==='running'
- if(tool.kind==='create_document')return tool.status==='error'?'Document update failed':tool.status==='stopped'||tool.status==='interrupted'?`Document ${tool.status}`:running?(tool.detail?.startsWith('Revising')?'Revising document':'Creating document'):tool.detail?.includes(' · Version ')?'Document revised':'Document created'
+ if(tool.kind==='create_document')return tool.status==='error'?'Document update failed':tool.status==='stopped'||tool.status==='interrupted'?`Document ${tool.status}`:running?(tool.detail?.startsWith('Revising')?'Revising document on this Mac':'Creating document on this Mac'):tool.detail?.includes(' · Version ')?'Document revised':'Document created'
  const label=tool.kind==='code_execution'?(running?'Running code':'Code execution'):tool.kind==='x_search'?(running?'Searching X':'Searched X'):(running?'Searching the web':'Searched the web')
  return tool.status==='error'?`${tool.kind==='code_execution'?'Code execution':'Search'} failed`:tool.status==='stopped'||tool.status==='interrupted'?`${tool.kind==='code_execution'?'Code execution':'Search'} ${tool.status}`:label
 }

@@ -16,7 +16,9 @@
     "modules:keygen": "node scripts/module-keygen.mjs",
     "modules:build": "node scripts/build-modules.mjs",
     "typecheck": "tsc --noEmit -p apps/desktop/tsconfig.json",
-    "test:ui": "node --test packages/ui/tooltip.test.cjs"
+    "test:ui": "node --test packages/ui/tooltip.test.cjs",
+    "documents:build": "node scripts/build-document-helper.mjs",
+    "documents:test": "ZQ_TEST_DOCUMENT_HELPER=1 node --test --test-concurrency=1 apps/desktop/tests/document-helper-native.test.cjs"
   },
   "packageManager": "npm@11.17.0"
 }

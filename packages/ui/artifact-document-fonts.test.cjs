@@ -4,7 +4,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 const { chromium } = require('playwright-core');
-const { renderArtifact } = require('../../apps/desktop/electron/artifact-renderer.cjs');
+const renderArtifact = process.env.ZQ_TEST_DOCUMENT_HELPER === '1'
+  ? require('../../apps/desktop/electron/document-helper.cjs').createDocumentRenderer({helperPath:path.resolve(__dirname,'../../apps/desktop/native/bin/DocumentHelper.app/Contents/MacOS/DocumentHelperLauncher')})
+  : require('../../apps/desktop/electron/artifact-renderer.cjs').renderArtifact;
 
 test('native Office font choices survive the isolated browser preview', { timeout: 120000 }, async () => {
   const typography = { fontFamily: 'Arial', titleFontFamily: 'Brush Script MT', headingFontFamily: 'Georgia', bodyFontFamily: 'Bradley Hand', bodySize: 18 };

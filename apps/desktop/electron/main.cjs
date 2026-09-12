@@ -74,7 +74,8 @@ app.whenReady().then(async () => {
  handle('modules:rollback',id=>moduleStore.rollback(id));
  handle('modules:recover',(id,version)=>moduleStore.recover(id,version));
  workspace = new WorkspaceStore(directory); files = new FileService(directory); attachments=new AttachmentService({normalizeImage:imageNormalizer(nativeImage)});
- let artifacts,artifactError,artifactWarning='';try{artifacts=new (require('./artifact-service.cjs').ArtifactService)({directory,onChange:items=>{if(window&&!window.isDestroyed())window.webContents.send('artifacts:changed',items)}})}catch(e){artifactError=e}
+ const renderDocument=require('./document-helper.cjs').createDocumentRenderer({helperPath:app.isPackaged?path.join(process.resourcesPath,'native','DocumentHelper.app','Contents','MacOS','DocumentHelperLauncher'):path.join(__dirname,'../native/bin/DocumentHelper.app/Contents/MacOS/DocumentHelperLauncher')});
+ let artifacts,artifactError,artifactWarning='';try{artifacts=new (require('./artifact-service.cjs').ArtifactService)({directory,render:renderDocument,onChange:items=>{if(window&&!window.isDestroyed())window.webContents.send('artifacts:changed',items)}})}catch(e){artifactError=e}
  const artifactService=()=>{if(!artifacts)throw artifactError;return artifacts};
  try { chat = new (require('./chat-service.cjs').ChatService)({directory, artifacts, credentials:require('./provider-keychain.cjs').createCredentialStore({directory,helperPath:app.isPackaged?path.join(process.resourcesPath,'native','provider-keychain'):undefined}), attachments, getNotes:()=>workspace.load()?.notes??[], onChange:state=>{if(window&&!window.isDestroyed())window.webContents.send('chat:changed',state)}}); } catch(error) { chatError=error; }
  if(chat)void chat.connections.cleanup();

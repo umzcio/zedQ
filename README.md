@@ -16,6 +16,8 @@ npm run desktop
 
 Electron may download its runtime on first launch. Native rebuild is explicit: do not add `electron-builder install-app-deps` as a workspace postinstall hook; it caused recursive installs with this workspace layout.
 
+The build also prepares and bundles a pinned document runtime. Chat and artifact revisions create DOCX, XLSX, PPTX and PDF through an App Sandbox helper without Docker or a separate Python install for users. See [document helper capabilities, limits and verification](docs/document-helper.md).
+
 ```sh
 npm test
 npm run pack

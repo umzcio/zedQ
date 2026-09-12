@@ -8,6 +8,8 @@ The [Agent Skills specification](https://agentskills.io/specification) defines a
 
 Import is separate from activation. Instructions and bounded readable references can become chat context. Preserving scripts, binaries, `allowed-tools`, or compatibility metadata does not install dependencies, grant permissions, or execute code. Requirements appear in the review. Packages requiring tools outside zQ's runtime have partial functional compatibility even when their files round-trip intact.
 
+The desktop's [fixed document helper](document-helper.md) provides structured DOCX/XLSX/PPTX/PDF creation and source-based revisions. Skill instructions can guide those tools; importing a document skill does not enable its arbitrary Python/JS scripts, LibreOffice, OCR or spreadsheet recalculation.
+
 ## Connectors and plugins (future integration)
 
 Use [MCP](https://modelcontextprotocol.io/specification/2026-07-28) for MCP servers and preserve recognized ecosystem configuration through explicit adapters. Connection configuration is distinct from the wire protocol. Authentication and native execution still need an intentional host implementation.

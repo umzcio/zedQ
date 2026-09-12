@@ -12,3 +12,27 @@ test('stopping during capability discovery prevents provider generation',async t
 test('a repeated identical document call reuses its successful file instead of duplicating artifacts',async t=>{let first,second;const f=await fixture(t,{supportsLocalTools:async()=>true,streamChat:async a=>{first=await a.onLocalTool(input);second=await a.onLocalTool(input);a.onDelta({content:'Created.'})}});await f.send();await wait(()=>!f.chat.runs.size);assert.equal(f.last().status,'complete',f.last().error);assert.equal(first.fileId,second.fileId);assert.equal(f.last().generatedFiles.length,1);assert.equal(f.artifacts.list().length,1)});
 test('a committed artifact with a flush warning still gets one file card and is not duplicated on retry',async t=>{let first,second;const f=await fixture(t,{supportsLocalTools:async()=>true,streamChat:async a=>{first=await a.onLocalTool(input);second=await a.onLocalTool(input);a.onDelta({content:'Saved with a storage warning.'})}});const commit=f.artifacts.commit.bind(f.artifacts);let once=true;f.artifacts.commit=(...args)=>{const result=commit(...args);if(once){once=false;throw Object.assign(Error('Artifact saved, but disk flush failed.'),{committed:true})}return result};await f.send();await wait(()=>!f.chat.runs.size);assert.equal(first.ok,true);assert.match(first.warning,/flush/);assert.equal(first.fileId,second.fileId);assert.equal(f.last().generatedFiles.length,1);assert.equal(f.artifacts.list().length,1);assert.match(f.last().toolActivity[0].detail,/flush/)});
 test('real Ollama adapter completes request → tool → document → final answer without enabling remote code',async t=>{const {createOllamaProvider}=require('../../../packages/providers/ollama.cjs');let round=0;const provider=createOllamaProvider({fetchImpl:async(url,options)=>{const body=JSON.parse(options.body);if(url.endsWith('/api/show'))return new Response(JSON.stringify({capabilities:['completion','tools','thinking']}));round++;if(round===1){assert.equal(body.tools[0].function.name,'create_document');return new Response(JSON.stringify({message:{role:'assistant',content:'',thinking:'I will write the poem.',tool_calls:[{function:{index:0,name:'create_document',arguments:input.arguments}}]},done:false})+'\n'+JSON.stringify({message:{role:'assistant',content:''},done:true,done_reason:'stop'})+'\n')}const result=body.messages.at(-1);assert.equal(result.role,'tool');assert.equal(result.tool_name,'create_document');assert.equal(JSON.parse(result.content).name,'Montana.docx');assert.equal(body.messages.at(-2).thinking,'I will write the poem.');return new Response(JSON.stringify({message:{role:'assistant',content:'Your Word document is attached.'},done:true,done_reason:'stop'})+'\n')}});const f=await fixture(t,provider);await f.send();await wait(()=>!f.chat.runs.size);assert.equal(f.last().status,'complete',f.last().error);assert.equal(round,2);assert.equal(f.last().generatedFiles.length,1);assert.equal(f.artifacts.list().length,1);assert.deepEqual(f.chat.conversation(f.id).messages[0].tools,[])});
+
+test('stopping Chat forwards cancellation into the document renderer and commits no output',async t=>{
+ let requestedSignal,renderSignal,started=false,aborted=false,settled=false;
+ const f=await fixture(t,{supportsLocalTools:async()=>true,streamChat:async request=>{
+  requestedSignal=request.signal;
+  try{await request.onLocalTool(input)}finally{settled=true}
+ }},async(_input,{signal}={})=>{
+  started=true;renderSignal=signal;
+  return new Promise((_resolve,reject)=>signal?.addEventListener('abort',()=>{aborted=true;reject(Error('Document helper cancelled.'))},{once:true}));
+ });
+ await f.send();await wait(()=>started||!f.chat.runs.size);
+ assert.equal(started,true,f.last().error);
+ assert.equal(renderSignal,requestedSignal,'the native renderer must receive the active Chat AbortSignal');
+ assert.match(f.last().toolActivity[0].detail,/Creating a document on this Mac/);
+ f.chat.stop(f.id);await wait(()=>settled);
+ assert.equal(aborted,true,'Stop must terminate the in-flight render rather than just discard its eventual output');
+ assert.equal(f.last().status,'stopped');
+ assert.equal(f.last().toolActivity[0].status,'stopped');
+ assert.equal(f.last().generatedFiles,undefined);
+ assert.deepEqual(f.artifacts.list(),[]);
+ assert.deepEqual(fs.readdirSync(f.artifacts.files),[]);
+ assert.deepEqual(new ArtifactService({directory:f.directory}).list(),[]);
+ assert.equal(new ChatStore(f.directory).load().conversations[0].messages.at(-1).generatedFiles,undefined);
+});

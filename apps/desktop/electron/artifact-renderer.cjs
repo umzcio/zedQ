@@ -450,4 +450,4 @@ async function previewArtifact({ name, mime, data } = {}) {
   return { text: text + (length >= MAX_SOURCE_BYTES ? '\n[Preview limited to 100 KB of text]' : '') };
 }
 
-module.exports = { renderArtifact, previewArtifact };
+module.exports = { renderArtifact, previewArtifact, parseContent };

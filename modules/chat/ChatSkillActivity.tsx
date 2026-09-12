@@ -8,7 +8,7 @@ export default function ChatSkillActivity({skills,closing}:{skills?:ChatSkillUsa
  async function copy(text:string,label:string){if(closing)return;try{await unwrap(services.clipboard.writeText(text));notify(`${label} copied`)}catch{notify(`Couldn’t copy ${label.toLowerCase()}. Try selecting the text.`)}}
  return <>{skills?.map(skill=>{
   const source=skill.source==='automatic'?'Selected automatically':'From your selection'
-  const resources='Package resources are preserved; scripts and tools are not executed.'
+  const resources='Package resources are preserved. Loaded instructions can guide supported document tools; packaged scripts are not executed and missing dependencies are not installed.'
   const details=[skill.name,skill.description,'Instructions loaded',source,...(skill.referenceNames.length?[`References: ${skill.referenceNames.join(', ')}`]:[]),...(skill.hasResources?[resources]:[])].filter(Boolean).join('\n')
   const actions=[{label:'Copy skill name',text:skill.name,notice:'Skill name'},{label:'Copy details',text:details,notice:'Skill details'}]
   return <ContextMenu key={skill.id}><ContextMenuTrigger asChild><section className="chat-skill-activity"><Collapsible>

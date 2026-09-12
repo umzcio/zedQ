@@ -89,3 +89,21 @@ test('two sequential revisions in one response read their own latest saved versi
  await f.send(async a=>{for(const sentence of ['First revision.','Second revision.']){const read=await a.onLocalTool({name:'read_document',arguments:{artifactId:first.artifactId}});last=await a.onLocalTool({name:'revise_document',arguments:{artifactId:first.artifactId,baseVersionId:read.versionId,content:read.content+'\n'+sentence}})}});
  assert.equal(last.ok,true,last.error);assert.equal(f.artifacts.list()[0].versions.length,3);const saved=f.artifacts.version({artifactId:first.artifactId,versionId:last.versionId});assert.match(saved.content,/First revision/);assert.match(saved.content,/Second revision/);
 });
+
+test('revisions send only document fields and the active signal to the fixed-operation renderer',async t=>{
+ const f=await fixture(t);let first,result;
+ await f.send(async request=>{first=await request.onLocalTool(create)});
+ const render=f.artifacts.render;
+ f.artifacts.render=async(input,options)=>{
+  assert.ok(Object.keys(input).every(key=>['format','title','content','typography'].includes(key)),'artifact bookkeeping must not cross the fixed document-render operation');
+  assert.ok(options?.signal instanceof AbortSignal);
+  assert.equal(options.signal.aborted,false);
+  return render(input);
+ };
+ await f.send(async request=>{
+  const base=await request.onLocalTool({name:'read_document',arguments:{artifactId:first.artifactId}});
+  result=await request.onLocalTool({name:'revise_document',arguments:{artifactId:first.artifactId,baseVersionId:base.versionId,content:base.content+'\nRevised through the fixed renderer.'}});
+ });
+ assert.equal(result.ok,true,result.error);
+ assert.equal(f.artifacts.list()[0].versions.length,2);
+});
