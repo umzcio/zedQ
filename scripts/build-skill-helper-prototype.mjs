@@ -43,6 +43,8 @@ run('xcrun', ['clang', '-O2', '-Wall', '-Wextra', '-c', join(source, 'ResourceMo
 run('xcrun', ['swiftc', '-O', ...swiftFlags, join(source, 'Protocol.swift'), join(source, 'Service.swift'), join(source, 'JobLease.swift'), callerPolicy, cleanupObject, monitorObject, '-o', join(service, 'Contents/MacOS/SkillHelperService')]);
 run('xcrun', ['clang', '-O2', '-Wall', '-Wextra', ...(probe ? ['-DAPP_SANDBOX_ONLY_PROBE=1'] : []), join(source, 'Worker.c'), '-o', join(service, 'Contents/MacOS/SkillHelperWorker')]);
 run('codesign', ['--force', '--sign', '-', ...entitlements('Worker'), join(service, 'Contents/MacOS/SkillHelperWorker')]);
+run('xcrun', ['clang', '-O2', '-Wall', '-Wextra', ...(seatbelt ? ['-DSEATBELT_ONLY_PROBE=1'] : []), join(source, 'Supervisor.c'), cleanupObject, monitorObject, '-o', join(service, 'Contents/MacOS/SkillHelperSupervisor')]);
+run('codesign', ['--force', '--sign', '-', ...entitlements('Worker'), join(service, 'Contents/MacOS/SkillHelperSupervisor')]);
 const runtime = join(base, 'runtime/python');
 if (existsSync(runtime)) {
   const destination = join(service, 'Contents/Resources/python');

@@ -95,3 +95,16 @@ test('diagnostic wall watchdog terminates sleeping work', { skip: !enabled || !p
   assert.notEqual(result.exitCode, 0);
   assert.ok(performance.now() - started < 33000);
 });
+test('diagnostic reaps same-group descendants after normal worker completion', { skip: !enabled || !probe }, async () => {
+  const result = execute({code:"import os,time\npid=os.fork()\nif pid==0:\n time.sleep(2)\n os._exit(0)\nprint(pid)",files:[]});
+  assert.equal(result.exitCode,0,JSON.stringify(result));
+  const pid=Number(result.stdout.trim());
+  assert.ok(Number.isInteger(pid)&&pid>1);
+  try {
+    for(let i=0;i<20;i++) {
+      try { process.kill(pid,0); } catch(e) { if(e.code==='ESRCH') return; throw e; }
+      await new Promise(resolve=>setTimeout(resolve,10));
+    }
+    assert.fail('same-group descendant survived normal completion');
+  } finally { try {process.kill(pid,'SIGKILL');}catch(e){if(e.code!=='ESRCH')throw e;} }
+});

@@ -1,7 +1,6 @@
 import Foundation
 import Darwin
 @_silgen_name("zq_clear_job_directory") private func clearJobDirectory(_ descriptor: Int32) -> Int32
-@_silgen_name("zq_sample_job") private func sampleJob(_ pid: Int32, _ descriptor: Int32, _ memory: UnsafeMutablePointer<UInt64>, _ files: UnsafeMutablePointer<UInt64>) -> Int32
 @main struct ServiceMain {
     static func main() {
         let listener = NSXPCListener.service()
@@ -37,8 +36,7 @@ final class Helper: NSObject, SkillHelperProtocol {
         lock.lock(); defer { lock.unlock() }
         cancelled = true
         if let process = active, process.isRunning {
-            kill(-process.processIdentifier, SIGKILL)
-            kill(process.processIdentifier, SIGKILL)
+            kill(process.processIdentifier, SIGTERM)
         }
     }
     func execute(_ request: Data, withReply reply: @escaping (Data) -> Void) {
@@ -54,7 +52,7 @@ final class Helper: NSObject, SkillHelperProtocol {
     private func run(_ request: Data, reply: @escaping (Data) -> Void) {
         let start = Date()
         let manager = FileManager.default
-        let job = manager.temporaryDirectory.appendingPathComponent("zq-skill-" + UUID().uuidString, isDirectory: true)
+        var job = manager.temporaryDirectory.appendingPathComponent("zq-skill-" + UUID().uuidString, isDirectory: true)
         var jobDescriptor: Int32 = -1
         var lease: JobLease?
         var result: [String: Any] = ["exitCode": 1, "files": []]
@@ -64,7 +62,7 @@ final class Helper: NSObject, SkillHelperProtocol {
                 let cleaned = clearJobDirectory(jobDescriptor)
                 close(jobDescriptor)
                 let removed = rmdir(job.path)
-                if cleaned != 0 || removed != 0 {
+                if (removed != 0 && errno != ENOENT) || (removed == 0 && cleaned != 0) {
                     result = ["exitCode": 1, "error": "temporary job cleanup incomplete", "files": []]
                 }
             }
@@ -77,6 +75,7 @@ final class Helper: NSObject, SkillHelperProtocol {
         do {
             lease = try JobLease.acquire()
             guard lease != nil else { result["error"] = "helper already has an active job"; return }
+            job = lease!.jobs.appendingPathComponent("zq-skill-" + UUID().uuidString, isDirectory: true)
             try manager.createDirectory(at: job, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
             jobDescriptor = open(job.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
             guard jobDescriptor >= 0 else {
@@ -86,12 +85,12 @@ final class Helper: NSObject, SkillHelperProtocol {
             try request.write(to: job.appendingPathComponent("request.json"), options: .atomic)
             let process = Process()
             let resources = Bundle.main.resourceURL!
-            process.executableURL = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/SkillHelperWorker")
-            process.arguments = [resources.path, job.path]
+            process.executableURL = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/SkillHelperSupervisor")
+            process.arguments = [Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/SkillHelperWorker").path, resources.path, job.path, String(getpid())]
             process.currentDirectoryURL = job
             process.environment = [:]
             let output = Pipe(), errors = Pipe()
-            process.standardInput = FileHandle.nullDevice
+            process.standardInput = FileHandle(fileDescriptor: lease!.descriptor, closeOnDealloc: false)
             process.standardOutput = output; process.standardError = errors
             lock.lock()
             if cancelled { lock.unlock(); result = ["exitCode": 130, "error": "cancelled", "files": []]; return }
@@ -104,18 +103,8 @@ final class Helper: NSObject, SkillHelperProtocol {
                 let flags = fcntl(handle.fileDescriptor, F_GETFL)
                 _ = fcntl(handle.fileDescriptor, F_SETFL, flags | O_NONBLOCK)
             }
-            let deadline = Date().addingTimeInterval(30)
+            let deadline = ProcessInfo.processInfo.systemUptime + 30
             var resourceError: String?
-            var nextSample = Date.distantPast
-            func resourceFailure(_ code: Int32) -> String? {
-                switch code {
-                case 0: return nil
-                case 1: return "worker memory threshold exceeded"
-                case 2: return "job file byte threshold exceeded"
-                case 3: return "job file count or depth threshold exceeded"
-                default: return "could not measure job resources"
-                }
-            }
             var scratch = [UInt8](repeating: 0, count: 65536)
             while true {
                 for (index, handle) in handles.enumerated() {
@@ -126,30 +115,20 @@ final class Helper: NSObject, SkillHelperProtocol {
                         if !buffers.append(Data(scratch[0..<count]), isError: index == 1) { cancel(); break }
                     }
                 }
-                if Date() >= deadline { cancel() }
+                if ProcessInfo.processInfo.systemUptime >= deadline { cancel() }
                 if !process.isRunning { break }
-                #if SEATBELT_ONLY_PROBE
-                if Date() >= nextSample && resourceError == nil {
-                    var memory: UInt64 = 0, files: UInt64 = 0
-                    let sample = sampleJob(process.processIdentifier, jobDescriptor, &memory, &files)
-                    // A process can exit between isRunning and the kernel query.
-                    if sample != -1 || process.isRunning { resourceError = resourceFailure(sample) }
-                    if resourceError != nil { cancel() }
-                    nextSample = Date().addingTimeInterval(0.05)
-                }
-                #endif
                 usleep(10000)
             }
             process.waitUntilExit()
-            // Kill the original group. The diagnostic App Sandbox-only build can
-            // still create children that escape with setsid; its tests expose this gap.
-            kill(-process.processIdentifier, SIGKILL)
-            #if SEATBELT_ONLY_PROBE
-            if resourceError == nil {
-                var memory: UInt64 = 0, files: UInt64 = 0
-                resourceError = resourceFailure(sampleJob(0, jobDescriptor, &memory, &files))
+            // Native supervisor owns worker lifetime, accounting and crash cleanup.
+            switch process.terminationStatus {
+            case 120: resourceError = "worker memory threshold exceeded"
+            case 121: resourceError = "job file byte threshold exceeded"
+            case 122: resourceError = "job file count or depth threshold exceeded"
+            case 123: resourceError = "could not measure job resources"
+            case 126: resourceError = "temporary job cleanup incomplete"
+            default: break
             }
-            #endif
             for (index, handle) in handles.enumerated() {
                 while true {
                     let count = Darwin.read(handle.fileDescriptor, &scratch, scratch.count)

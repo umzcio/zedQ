@@ -4,6 +4,7 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const jobsRoot = path.join(os.tmpdir(), 'zq-native-helper-locks', 'dev.zq.SkillHelperSeatbeltProbe.Service.jobs');
 const enabled = process.platform === 'darwin' && process.env.ZQ_TEST_NATIVE_SEATBELT === '1';
 if (![undefined, 'strict', 'seatbelt-only-probe'].includes(process.env.ZQ_NATIVE_HELPER_MODE)) throw new Error('Invalid Seatbelt test mode');
 const app = process.env.ZQ_NATIVE_HELPER_MODE === 'strict' ? 'SkillHelperPrototype.app' : 'SkillHelperSeatbeltProbe.app';
@@ -62,18 +63,18 @@ test('per-job worker cancellation responds promptly', { skip: !enabled }, () => 
   assert.ok(performance.now() - start < 3000);
 });
 test('service cleans a job whose code removes directory permissions', { skip: !enabled }, async () => {
-  const before = new Set(fs.readdirSync(os.tmpdir()));
+  const before = new Set(fs.readdirSync(jobsRoot));
   const response = execute("import os,pathlib\np=pathlib.Path('locked')\np.mkdir()\n(p/'synthetic').write_text('SYNTHETIC')\np.chmod(0)\nroot=pathlib.Path.cwd()\nroot.chmod(0)\nprint(root)");
   assert.notEqual(response.exitCode, 0);
   assert.equal(response.error, 'could not measure job resources');
   // The resource monitor fails closed on the locked root. Completion now includes
   // cleanup, so there must be no newly-created job left when the reply arrives.
-  const remaining = fs.readdirSync(os.tmpdir()).filter(name => !before.has(name) && /^zq-skill-[A-F0-9-]+$/i.test(name));
+  const remaining = fs.readdirSync(jobsRoot).filter(name => !before.has(name) && /^zq-skill-[A-F0-9-]+$/i.test(name));
   try {
     assert.deepEqual(remaining, [], 'service must remove permission-locked job data before replying');
   } finally {
     for (const name of remaining) {
-      const job = path.join(os.tmpdir(), name);
+      const job = path.join(jobsRoot, name);
       fs.chmodSync(job, 0o700);
       if (fs.existsSync(path.join(job, 'locked'))) fs.chmodSync(path.join(job, 'locked'), 0o700);
       fs.rmSync(job, { recursive: true, force: true });
@@ -87,7 +88,7 @@ test('service cleanup unlinks directory symlinks without touching their targets'
   fs.chmodSync(dir, 0o500);
   try {
     const job = success(`import pathlib\npathlib.Path('host-link').symlink_to(${JSON.stringify(dir)},target_is_directory=True)\nprint(pathlib.Path.cwd())`);
-    assert.equal(fs.realpathSync(path.dirname(job)), fs.realpathSync(os.tmpdir()));
+    assert.equal(fs.realpathSync(path.dirname(job)), fs.realpathSync(jobsRoot));
     assert.match(path.basename(job), /^zq-skill-[A-F0-9-]+$/i);
     for (let i=0; i<30 && fs.existsSync(job); i++) await new Promise(resolve => setTimeout(resolve, 20));
     assert.equal(fs.existsSync(job), false);

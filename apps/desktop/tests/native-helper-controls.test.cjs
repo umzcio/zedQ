@@ -4,6 +4,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const jobsRoot = path.join(os.tmpdir(), 'zq-native-helper-locks', 'dev.zq.SkillHelperSeatbeltProbe.Service.jobs');
 const enabled = process.platform === 'darwin' && process.env.ZQ_TEST_NATIVE_CONTROLS === '1';
 const app = path.resolve(__dirname, '../../../.local-data/skill-helper-prototype/SkillHelperSeatbeltProbe.app');
 const caller = bundle => path.join(bundle, 'Contents/MacOS/SkillHelperPrototype');
@@ -66,7 +67,7 @@ test('final resource check rejects oversized jobs that finish immediately', { sk
 });
 test('job slot is shared across client processes and released on completion', { skip: !enabled }, async () => {
   const nonce = require('node:crypto').randomUUID();
-  const temporary = os.tmpdir();
+  const temporary = jobsRoot;
   const before = new Set(fs.readdirSync(temporary));
   const first = spawn(caller(app), [], { stdio: ['pipe', 'pipe', 'pipe'] });
   let output = '', errors = '';
