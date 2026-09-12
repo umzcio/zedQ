@@ -1,9 +1,9 @@
 /* One policy across shell, modules and portals. No layout box for enabled controls. */
 .zq-tooltip{z-index:1000;max-width:min(300px,var(--radix-tooltip-content-available-width));padding:7px 10px;border:1px solid var(--line,#dedede);border-radius:7px;background:var(--panel,#fff);color:var(--text,#242424);box-shadow:0 3px 14px #00000018;font-family:inherit;font-size:12px;font-weight:400;line-height:1.45;letter-spacing:normal;text-align:left;overflow-wrap:anywhere;white-space:normal;user-select:none;transform-origin:var(--radix-tooltip-content-transform-origin)}
-.zq-tooltip[data-state=delayed-open]{animation:zq-tooltip-in 125ms cubic-bezier(.23,1,.32,1)}
+.zq-tooltip[data-state=delayed-open]{animation:zq-tooltip-in 110ms cubic-bezier(.2,.8,.2,1)}
 .zq-tooltip-disabled{display:inline-flex;max-width:100%;min-width:0;vertical-align:middle;cursor:not-allowed;border-radius:inherit}
 .zq-tooltip-disabled>button{pointer-events:none}
 .zq-tooltip-disabled:focus-visible{outline:2px solid var(--accent-text,#555);outline-offset:3px}
-@keyframes zq-tooltip-in{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
+@keyframes zq-tooltip-in{from{opacity:0}to{opacity:1}}
 @media(prefers-reduced-motion:reduce){.zq-tooltip{animation:none!important}}
 .zq-tooltip-disabled:has(>.zq-select-trigger){width:100%}

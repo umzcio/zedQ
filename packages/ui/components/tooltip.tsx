@@ -1,9 +1,19 @@
 import * as React from 'react'
 import { Tooltip as Primitive, Slot } from 'radix-ui'
 
-const SharedProvider = React.createContext(false)
+const SharedProvider = React.createContext<React.RefObject<boolean>|null>(null)
 export function TooltipProvider({children}: {children: React.ReactNode}) {
- return <SharedProvider.Provider value={true}><Primitive.Provider delayDuration={450} skipDelayDuration={300}>{children}</Primitive.Provider></SharedProvider.Provider>
+ // Menus restore focus programmatically after pointer selection. That focus
+ // should not reopen help; actual keyboard navigation should.
+ const keyboard=React.useRef(false)
+ React.useEffect(()=>{
+  const onPointerDown=()=>{keyboard.current=false}
+  const onKeyDown=(event:KeyboardEvent)=>{if(!['Shift','Control','Alt','Meta'].includes(event.key))keyboard.current=true}
+  document.addEventListener('pointerdown',onPointerDown,true)
+  document.addEventListener('keydown',onKeyDown,true)
+  return()=>{document.removeEventListener('pointerdown',onPointerDown,true);document.removeEventListener('keydown',onKeyDown,true)}
+ },[])
+ return <SharedProvider.Provider value={keyboard}><Primitive.Provider delayDuration={450} skipDelayDuration={300}>{children}</Primitive.Provider></SharedProvider.Provider>
 }
 
 // Visible text is a conservative fallback. Explicit copy should explain actions
@@ -31,15 +41,30 @@ const TooltipAnchor=React.forwardRef<HTMLElement,React.ComponentProps<typeof Slo
  return <Slot.Root {...rest} ref={ref}/>
 })
 function TooltipBody({content,children,side}:{content:React.ReactNode;children:React.ReactElement;side:'top'|'right'|'bottom'|'left'}) {
+ const keyboard=React.useContext(SharedProvider)
  const [open,setOpen]=React.useState(false)
+ const leaveTimer=React.useRef<ReturnType<typeof setTimeout>|undefined>(undefined)
+ const cancelLeave=React.useCallback(()=>{clearTimeout(leaveTimer.current);leaveTimer.current=undefined},[])
+ const close=React.useCallback(()=>{cancelLeave();setOpen(false)},[cancelLeave])
+ // Radix's hover corridor has no timeout. Stopping in the gap can otherwise
+ // leave help visible forever. Still allow crossing into the text to read it.
+ const scheduleLeave=()=>{cancelLeave();leaveTimer.current=setTimeout(close,120)}
+ React.useEffect(()=>cancelLeave,[cancelLeave])
+ React.useEffect(()=>{
+  if(!open)return
+  const onVisibilityChange=()=>{if(document.hidden)close()}
+  window.addEventListener('blur',close)
+  document.addEventListener('visibilitychange',onVisibilityChange)
+  return()=>{window.removeEventListener('blur',close);document.removeEventListener('visibilitychange',onVisibilityChange)}
+ },[open,close])
  const props=(children as React.ReactElement<ChildProps>).props
  const expanded=!!props['aria-haspopup']&&(props['aria-expanded']===true||props['aria-expanded']==='true')
  const target=React.cloneElement(children as React.ReactElement<ChildProps>,{title:undefined})
- return <Primitive.Root open={open&&!expanded} onOpenChange={setOpen}>
-  <Primitive.Trigger asChild><TooltipAnchor>{props.disabled?
+ return <Primitive.Root open={open&&!expanded} onOpenChange={next=>{cancelLeave();setOpen(next)}}>
+  <Primitive.Trigger asChild onPointerEnter={cancelLeave} onPointerLeave={scheduleLeave} onPointerCancel={close} onFocus={event=>{if(!keyboard?.current)event.preventDefault()}}><TooltipAnchor>{props.disabled?
    <span className="zq-tooltip-disabled" tabIndex={0} aria-label={props['aria-label']??controlText(props.children)} aria-disabled="true">{target}</span>:target}
   </TooltipAnchor></Primitive.Trigger>
-  <Primitive.Portal><Primitive.Content side={side} sideOffset={7} collisionPadding={10} className="zq-tooltip" data-slot="tooltip-content">{content}</Primitive.Content></Primitive.Portal>
+  <Primitive.Portal><Primitive.Content onPointerEnter={cancelLeave} onPointerLeave={scheduleLeave} onPointerCancel={close} side={side} sideOffset={7} collisionPadding={10} className="zq-tooltip" data-slot="tooltip-content">{content}</Primitive.Content></Primitive.Portal>
  </Primitive.Root>
 }
 

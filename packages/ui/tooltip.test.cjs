@@ -12,6 +12,17 @@ test('shared tooltips preserve hover, keyboard, disabled and menu interactions',
   browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage({viewport:{width:900,height:500}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(server.resolvedUrls.local[0]);const button=page.getByRole('button',{name:'Toggle panel'});
   await button.hover();await page.getByRole('tooltip',{name:'Show panel'}).waitFor();
+  // Stopping in the small gap above a trigger must not leave help open indefinitely.
+  const triggerBox=await button.boundingBox();
+  await page.mouse.move(triggerBox.x+triggerBox.width/2,triggerBox.y-2);
+  await page.getByRole('tooltip').waitFor({state:'hidden',timeout:400});
+  await button.hover();await page.getByRole('tooltip',{name:'Show panel'}).waitFor();
+  // Hovering the tooltip itself is still supported for reading / magnification.
+  await page.getByRole('tooltip',{name:'Show panel'}).hover();
+  await page.waitForTimeout(200);
+  assert.equal(await page.getByRole('tooltip',{name:'Show panel'}).isVisible(),true);
+  await page.mouse.move(850,450);await page.getByRole('tooltip').waitFor({state:'hidden',timeout:400});
+  await button.hover();await page.getByRole('tooltip',{name:'Show panel'}).waitFor();
   assert.equal(await button.getAttribute('title'),null,'native title must not duplicate the shared tooltip');
   await page.keyboard.press('Escape');await page.getByRole('tooltip').waitFor({state:'hidden'});
   await button.click();await page.mouse.move(850,450);await page.keyboard.press('Tab');
@@ -30,6 +41,16 @@ test('shared tooltips preserve hover, keyboard, disabled and menu interactions',
   await page.getByRole('combobox',{name:'Priority'}).click();await page.getByRole('option',{name:'High',exact:true}).waitFor();
   assert.equal(await page.getByRole('combobox',{name:'Priority',includeHidden:true}).getAttribute('data-state'),'open');assert.equal(await page.getByRole('tooltip').count(),0);
   await page.keyboard.press('Escape');assert.equal(await page.getByRole('combobox',{name:'Priority',includeHidden:true}).getAttribute('data-state'),'closed');
+  // Returning focus after a pointer selection must not reopen a help bubble.
+  await select.click();await page.getByRole('option',{name:'High',exact:true}).click();
+  await page.mouse.move(850,450);await page.waitForTimeout(200);
+  assert.equal(await page.getByRole('tooltip').count(),0,'pointer selection must not reopen tooltip on restored focus');
+  await button.hover();await page.getByRole('tooltip').waitFor();
+  await page.evaluate(()=>window.dispatchEvent(new Event('blur')));
+  await page.getByRole('tooltip').waitFor({state:'hidden',timeout:400});
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.mouse.move(850,450);await button.hover();await page.getByRole('tooltip').waitFor();
+  assert.equal(await page.getByRole('tooltip').evaluate(el=>getComputedStyle(el).animationName),'none');
   assert.deepEqual(errors,[]);
  }finally{await browser?.close();await server?.close();fs.rmSync(dir,{recursive:true,force:true});}
 });
