@@ -16,4 +16,4 @@ Object.defineProperty(window,'__zqRuntime',{value:Object.freeze({React,ReactDOM,
 document.documentElement.dataset.platform=window.zq?.platform??''
 const root=createRoot(document.getElementById('root')!)
 root.render(<div className="startup-state" role="status">Opening your modules…</div>)
-loadModules().then(modules=>root.render(<React.StrictMode><DesktopRoot modules={modules}/></React.StrictMode>)).catch(error=>root.render(<div className="startup-state" role="alert"><h1>zQ could not load its modules</h1><p>{error.message}</p><p>Your saved workspace has not been changed.</p><button onClick={()=>location.reload()}>Try again</button></div>))
+loadModules().then(modules=>root.render(<React.StrictMode><ui.TooltipProvider><DesktopRoot modules={modules}/></ui.TooltipProvider></React.StrictMode>)).catch(error=>root.render(<div className="startup-state" role="alert"><h1>zQ could not load its modules</h1><p>{error.message}</p><p>Your saved workspace has not been changed.</p><ui.TooltipButton tooltip="Reload zQ and try loading modules again" onClick={()=>location.reload()}>Try again</ui.TooltipButton></div>))

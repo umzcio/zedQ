@@ -1,6 +1,6 @@
 {
   "id": "zq.hq",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "apiVersion": 1,
   "title": "HQ",
   "view": "HQ",
@@ -8,6 +8,7 @@
   "capabilities": [
     "workspace.read",
     "workspace.write",
-    "commands"
+    "commands",
+    "ui.tooltips.v1"
   ]
 }

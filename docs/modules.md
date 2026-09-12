@@ -109,3 +109,7 @@ Chat 1.14.0 requires `chat.flow.v1` in its target shell. This shell adds durable
 Chat 1.15.0 requires `skills.activation.v1` for automatic discovery, durable loaded-skill snapshots and visible usage activity. Install this desktop shell update before independently staging the Chat module. The host retains script-execution and permission boundaries; loading a skill does not grant tools.
 
 Chat 1.16.0 requires `artifacts.fonts.v1` for the expanded native typography schema and exporters. Ship with the updated shell; older shells reject this capability. Existing stored typography remains valid, and no new renderer IPC is required.
+
+## Shared tooltip capability
+
+The app-wide tooltip release adds `ui.tooltips.v1` to each updated module's required capabilities. It supplies shared tooltip exports and styles in the desktop shell. Older shells reject these newer module packages before loading their code because the capability exceeds their bundled permissions. Install the accompanying desktop build first; subsequent compatible module updates can continue independently. No native storage schema changed.

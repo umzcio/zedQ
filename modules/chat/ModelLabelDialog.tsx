@@ -16,7 +16,7 @@ export function ModelLabelDialog({connectionId,model,label,disabled,onClose,onSa
   <p className="model-label-original">{model}</p>
   <form onSubmit={e=>{e.preventDefault();void save()}}><label htmlFor="custom-model-label">Display name</label><Input ref={input} id="custom-model-label" placeholder="e.g. My coding model" value={value} maxLength={80} disabled={saving||disabled} onChange={e=>setValue(e.target.value)}/>
    {error&&<p className="chat-error" role="alert">{error}</p>}
-   <div className="model-label-actions">{label&&<Button type="button" variant="ghost" disabled={saving||disabled} onClick={()=>void save(true)}>Reset label</Button>}<span/><Button type="button" variant="ghost" disabled={saving||disabled} onClick={onClose}>Cancel</Button><Button type="submit" disabled={saving||disabled||!value.trim()}>{saving?'Saving…':'Save label'}</Button></div>
+   <div className="model-label-actions">{label&&<Button type="button" variant="ghost" disabled={saving||disabled} tooltip="Remove the custom label and show the original model name" onClick={()=>void save(true)}>Reset label</Button>}<span/><Button type="button" variant="ghost" disabled={saving||disabled} onClick={onClose}>Cancel</Button><Button tooltip={!value.trim() ? 'Enter a display name to save' : 'Save this display name; the provider’s model ID stays the same'} type="submit" disabled={saving||disabled||!value.trim()}>{saving?'Saving…':'Save label'}</Button></div>
   </form>
  </DialogContent></Dialog>
 }

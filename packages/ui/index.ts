@@ -18,3 +18,5 @@ export * from './chat-source-links'
 export * from './artifact-attachments'
 export * from './artifact-document-view'
 export * from './components/hover-card'
+
+export * from './components/tooltip'

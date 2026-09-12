@@ -1,6 +1,6 @@
 {
   "id": "zq.chat",
-  "version": "1.16.0",
+  "version": "1.16.1",
   "apiVersion": 1,
   "title": "Chat",
   "view": "Chat",
@@ -31,6 +31,7 @@
     "skills.recognition.v1",
     "chat.flow.v1",
     "skills.activation.v1",
-    "artifacts.fonts.v1"
+    "artifacts.fonts.v1",
+    "ui.tooltips.v1"
   ]
 }

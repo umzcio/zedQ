@@ -29,3 +29,5 @@ coverage/
 # Disposable browser-test harnesses
 .artifact-document-test-*/
 .helper-preview-test-*/
+
+.tooltip-test-*/

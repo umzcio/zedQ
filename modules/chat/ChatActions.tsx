@@ -1,3 +1,4 @@
+import { TooltipButton } from '@zq/ui'
 import { useRef, useState, type ReactElement } from 'react'
 import { ArrowSquareOut, PencilSimple, Trash, FolderSimple, DotsThree } from '@phosphor-icons/react'
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from '@zq/ui'
@@ -28,7 +29,7 @@ export function ChatContextMenu({ conversation:c, chat, disabled, deleteDisabled
   ...(c.deletedAt?[{label:'Restore chat',run:()=>void run(()=>chat.updateConversation({id:c.id,deleted:false})),disabled:mutating}]:[{label:c.archivedAt?'Restore from archive':'Archive chat',run:()=>void run(()=>chat.updateConversation({id:c.id,archived:!c.archivedAt})),disabled:mutating},{label:'Move to Trash…',run:()=>choose('delete'),disabled:mutating}]),
  ]
  function menuClose(event:Event){if(openingDialog.current){event.preventDefault();openingDialog.current=false}}
- return <ContextMenu><ContextMenuTrigger asChild disabled={disabled}><div className="chat-action-row" data-menu-open={open||undefined}>{children}<DropdownMenu onOpenChange={setOpen}><DropdownMenuTrigger asChild><button type="button" className="chat-row-more" aria-label={`Actions for ${c.title}`} disabled={blocked}><DotsThree size={17}/></button></DropdownMenuTrigger><DropdownMenuContent align="end" onCloseAutoFocus={menuClose}>{actions.map(action=><DropdownMenuItem key={action.label} disabled={action.disabled} onSelect={action.run}>{action.label}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu></div></ContextMenuTrigger>
+ return <ContextMenu><ContextMenuTrigger asChild disabled={disabled}><div className="chat-action-row" data-menu-open={open||undefined}>{children}<DropdownMenu onOpenChange={setOpen}><DropdownMenuTrigger asChild><TooltipButton tooltip={`Open actions for ${c.title}: rename, organize, export, or restore this chat`} type="button" className="chat-row-more" aria-label={`Actions for ${c.title}`} disabled={blocked}><DotsThree size={17}/></TooltipButton></DropdownMenuTrigger><DropdownMenuContent align="end" onCloseAutoFocus={menuClose}>{actions.map(action=><DropdownMenuItem key={action.label} disabled={action.disabled} onSelect={action.run}>{action.label}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu></div></ContextMenuTrigger>
   {!disabled&&<ContextMenuContent aria-label={`Chat actions for ${c.title}`} onCloseAutoFocus={menuClose}>{actions.map(action=><ContextMenuItem key={action.label} disabled={action.disabled} onSelect={action.run}>{action.label}</ContextMenuItem>)}</ContextMenuContent>}
  </ContextMenu>
 }
@@ -63,11 +64,11 @@ export function ChatActionDialog({ action, disabled, onClose, onRename, onDelete
    <DialogDescription>{rename ? 'Give this conversation a name you’ll recognize.' : move ? 'Future messages will use the selected project’s files and instructions.' : `“${action.conversation.title}” and its messages and attachments will stay in Trash until you restore them.`}</DialogDescription>
    <form onSubmit={event => { event.preventDefault(); void submit() }}>
     {rename && <><label htmlFor="rename-chat-title">Name</label><Input ref={input} id="rename-chat-title" aria-label="Chat name" value={title} maxLength={1024} disabled={blocked} onChange={event => setTitle(event.target.value)}/></>}
-    {move && <SelectField label="Destination project" value={projectId} onValueChange={setProjectId} disabled={blocked} options={[{value:'',label:'No project'},...projects.map(p=>({value:p.id,label:p.name}))]}/>}
+    {move && <SelectField label="Destination project" tooltip="Choose which project’s instructions and files future messages will use" value={projectId} onValueChange={setProjectId} disabled={blocked} options={[{value:'',label:'No project'},...projects.map(p=>({value:p.id,label:p.name}))]}/>}
     {error && <p className="chat-action-error" role="alert">{error}</p>}
     <div className="dialog-actions">
      <Button ref={cancel} type="button" variant="ghost" disabled={blocked} onClick={onClose}>Cancel</Button>
-     <Button type="submit" variant={rename || move ? 'default' : 'destructive'} className={rename || move ? 'primary-button' : 'chat-delete-confirm'} disabled={blocked || rename && !title.trim()}>{busy ? 'Saving…' : rename ? 'Rename' : move ? 'Move chat' : 'Move to Trash'}</Button>
+     <Button tooltip={rename ? 'Save this conversation’s new name' : move ? 'Move this chat; future messages use the destination project’s instructions and files' : 'Move this chat to Trash; you can restore it later'} type="submit" variant={rename || move ? 'default' : 'destructive'} className={rename || move ? 'primary-button' : 'chat-delete-confirm'} disabled={blocked || rename && !title.trim()}>{busy ? 'Saving…' : rename ? 'Rename' : move ? 'Move chat' : 'Move to Trash'}</Button>
     </div>
    </form>
   </DialogContent>

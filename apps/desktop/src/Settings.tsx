@@ -1,3 +1,4 @@
+import {TooltipButton} from '@zq/ui'
 import { useLayoutEffect, useRef, type Ref } from 'react'
 import type { SettingsSection, WorkspaceState } from '@zq/module-api'
 import { Check } from '@phosphor-icons/react'
@@ -16,20 +17,20 @@ export default function Settings({section,theme,palette,setTheme,setPalette,clos
     <h2 id="appearance-title">Appearance</h2>
     <p>Choose light, dark, or follow your Mac’s preference.</p>
     <div className="theme-options">
-     {(['light','dark','system'] as const).map(t=><button key={t} aria-pressed={theme===t} className={`theme-option ${theme===t?'selected':''}`} onClick={()=>setTheme(t)}>
+     {(['light','dark','system'] as const).map(t=><TooltipButton key={t} tooltip={t==='system'?"Follow your Mac’s light or dark appearance":`Use ${t} appearance`} aria-pressed={theme===t} className={`theme-option ${theme===t?'selected':''}`} onClick={()=>setTheme(t)}>
       <div className={`theme-preview preview-${t}`}><div/><section><span/><i/><i/></section></div>
       <span>{t[0].toUpperCase()+t.slice(1)}{theme===t&&<Check size={16}/>}</span>
-     </button>)}
+     </TooltipButton>)}
     </div>
    </section>
    <section className="palette-section">
     <h2>Color theme</h2>
     <p>A little personality. Works with light, dark, and system appearance.</p>
     <div className="palette-options" role="group" aria-label="Color theme">
-     {palettes.map(color=><button key={color} className={`palette-option ${palette===color?'selected':''}`} aria-label={`${color[0].toUpperCase()+color.slice(1)} color theme`} aria-pressed={palette===color} onClick={()=>setPalette(color)}>
+     {palettes.map(color=><TooltipButton key={color} tooltip={`Use the ${color} color theme`} className={`palette-option ${palette===color?'selected':''}`} aria-label={`${color[0].toUpperCase()+color.slice(1)} color theme`} aria-pressed={palette===color} onClick={()=>setPalette(color)}>
       <span className={`palette-swatch swatch-${color}`}><i/><i/><i/></span>
       <span className="palette-name">{color[0].toUpperCase()+color.slice(1)}{palette===color&&<Check size={15}/>}</span>
-     </button>)}
+     </TooltipButton>)}
     </div>
    </section>
   </div>

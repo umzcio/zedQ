@@ -1,4 +1,5 @@
 import * as React from "react"
+import {ControlTooltip} from "./tooltip"
 import { cn } from "../lib/utils"
 import { Check as CheckIcon, CaretDown as ChevronDownIcon, CaretUp as ChevronUpIcon } from "@phosphor-icons/react"
 import { Select as SelectPrimitive } from "radix-ui"
@@ -24,13 +25,16 @@ function SelectValue({
 function SelectTrigger({
   className,
   size = "default",
+  tooltip,
+  title,
   children,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
   size?: "sm" | "default"
+  tooltip?: React.ReactNode
 }) {
   return (
-    <SelectPrimitive.Trigger
+    <ControlTooltip content={tooltip??title??props["aria-label"]}><SelectPrimitive.Trigger
       data-slot="select-trigger"
       data-size={size}
       className={cn(
@@ -43,7 +47,7 @@ function SelectTrigger({
       <SelectPrimitive.Icon asChild>
         <ChevronDownIcon className="size-4 opacity-50" />
       </SelectPrimitive.Icon>
-    </SelectPrimitive.Trigger>
+    </SelectPrimitive.Trigger></ControlTooltip>
   )
 }
 

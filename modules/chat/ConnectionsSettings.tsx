@@ -1,13 +1,14 @@
+import { ControlTooltip } from '@zq/ui'
 import { useHost, unwrap, type Connection } from '@zq/module-api'
 import { DotsThree, Plus, PencilSimple, PlugsConnected, Trash, SlidersHorizontal } from '@phosphor-icons/react'
 import { useRef, useState } from 'react'
-import { Button, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, Dialog, DialogContent, DialogTitle, DialogDescription } from '@zq/ui'
+import { TooltipButton, Button, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, Dialog, DialogContent, DialogTitle, DialogDescription } from '@zq/ui'
 import { ConnectionDialog, connectionProviders } from './ConnectionDialog'
 import { ProviderLogo } from './ProviderLogo'
 import { ManageModels } from './ManageModels'
 import type { ChatController } from './useChat'
 
-function CheckResult({models,name}:{models:string[];name:string}){return <><p role="status">{name} · Connected · {models.length} models available</p>{models.length>0&&<details><summary>View models</summary><ul className="connection-model-list" aria-label="Available models">{models.map(model=><li key={model}>{model}</li>)}</ul></details>}</>}
+function CheckResult({models,name}:{models:string[];name:string}){return <><p role="status">{name} · Connected · {models.length} models available</p>{models.length>0&&<details><ControlTooltip content="Expand or collapse the models returned by this connection test"><summary>View models</summary></ControlTooltip><ul className="connection-model-list" aria-label="Available models">{models.map(model=><li key={model}>{model}</li>)}</ul></details>}</>}
 
 export default function ConnectionsSettings({ chat, closing }: { chat: ChatController; closing: boolean }) {
  const { services } = useHost()
@@ -52,17 +53,17 @@ export default function ConnectionsSettings({ chat, closing }: { chat: ChatContr
   finally { pending.current = false; setBusy('') }
  }
  return <section id="model-connections" className="connections-settings">
-  <div className="connection-settings-heading settings-panel-header"><div><h2>Connections</h2><p>Connect your providers and choose the models you want in Chat.</p></div><Button ref={addButton} variant="outline" disabled={disabled} onClick={() => open()}><Plus size={15}/>Add provider</Button></div>
+  <div className="connection-settings-heading settings-panel-header"><div><h2>Connections</h2><p>Connect your providers and choose the models you want in Chat.</p></div><Button tooltip="Connect a model provider and choose its models for Chat" ref={addButton} variant="outline" disabled={disabled} onClick={() => open()}><Plus size={15}/>Add provider</Button></div>
   {stateError && <p className="chat-error" role="alert">{stateError}</p>}
   {chat.loading ? <p role="status">Loading connections…</p> : !chat.state.connections.length && !stateError ? <p className="connection-empty">No connections yet. Add a provider to start chatting.</p> : null}
   <div className="connection-list">
    {chat.state.connections.map(connection => <ContextMenu key={connection.id}>
     <ContextMenuTrigger asChild disabled={disabled}><div className="connection-row settings-resource-row">
      <span className="settings-resource-icon" aria-hidden="true"><ProviderLogo provider={connection.provider} size={25}/></span>
-     <button ref={node => { if (node) rowButtons.current.set(connection.id, node); else rowButtons.current.delete(connection.id) }} className="connection-summary" disabled={disabled} onClick={() => manage(connection)} aria-label={`Manage models for ${connection.name}`}>
+     <TooltipButton tooltip={`Choose which ${connection.name} models appear in Chat`} ref={node => { if (node) rowButtons.current.set(connection.id, node); else rowButtons.current.delete(connection.id) }} className="connection-summary" disabled={disabled} onClick={() => manage(connection)} aria-label={`Manage models for ${connection.name}`}>
       <strong>{connection.name}</strong><span>{connectionProviders.find(provider => provider.value === connection.provider)?.label} · {connection.enabledModels.length} {connection.enabledModels.length===1?'model':'models'} enabled</span>
-     </button>
-     <div className="connection-row-actions"><Button variant="ghost" disabled={disabled} onClick={()=>manage(connection)}>Manage models</Button>
+     </TooltipButton>
+     <div className="connection-row-actions"><Button variant="ghost" disabled={disabled} tooltip={`Choose which ${connection.name} models appear in Chat`} onClick={()=>manage(connection)}>Manage models</Button>
       <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="settings-more-button" disabled={disabled} aria-label={`Actions for ${connection.name}`}><DotsThree size={20}/></Button></DropdownMenuTrigger><DropdownMenuContent align="end" onCloseAutoFocus={event=>{if(openingDialog.current){event.preventDefault();openingDialog.current=false}}}>
        <DropdownMenuItem onSelect={()=>{openingDialog.current=true;manage(connection)}}><SlidersHorizontal size={15}/>Manage models…</DropdownMenuItem>
        <DropdownMenuItem onSelect={()=>{openingDialog.current=true;open(connection)}}><PencilSimple size={15}/>Edit connection…</DropdownMenuItem>
@@ -89,7 +90,7 @@ export default function ConnectionsSettings({ chat, closing }: { chat: ChatContr
    <DialogContent className="connection-dialog" showCloseButton={!busy && !closing} onOpenAutoFocus={event => { event.preventDefault(); cancelButton.current?.focus() }} onCloseAutoFocus={restoreFocus}>
     <DialogTitle>Delete connection?</DialogTitle><DialogDescription>Remove “{remove?.name}” and its saved API key. Your chats and messages are kept; choose another connection to continue those chats.</DialogDescription>
     {error && <p className="chat-error" role="alert">{error}</p>}
-    <div className="dialog-actions"><Button ref={cancelButton} variant="ghost" disabled={!!busy || closing} onClick={() => { setRemove(null); setError('') }}>Cancel</Button><Button variant="destructive" disabled={disabled} onClick={() => void deleteConnection()}>{busy ? 'Deleting…' : 'Delete connection'}</Button></div>
+    <div className="dialog-actions"><Button ref={cancelButton} variant="ghost" disabled={!!busy || closing} onClick={() => { setRemove(null); setError('') }}>Cancel</Button><Button tooltip="Remove this connection and its saved API key; keep existing chats" variant="destructive" disabled={disabled} onClick={() => void deleteConnection()}>{busy ? 'Deleting…' : 'Delete connection'}</Button></div>
    </DialogContent>
   </Dialog>
  </section>

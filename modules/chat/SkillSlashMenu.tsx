@@ -1,3 +1,4 @@
+import { TooltipButton } from '@zq/ui'
 import { useEffect, useLayoutEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
 import type { ChatSkill } from '@zq/module-api'
 import { Check, Scroll } from '@phosphor-icons/react'
@@ -49,7 +50,7 @@ export function SkillSlashMenu({ slash, active, disabled, onAction }: { slash: R
  if (!slash.open) return null
  return <div ref={menu} data-side={placement.side} className="skill-slash-menu" onMouseDown={event => event.preventDefault()} onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); slash.dismissToInput() } }}>
   <div className="skill-picker-heading"><strong>Skills</strong><span>Enter to enable</span></div>
-  <div role="listbox" id={slash.listId} aria-label="Installed skills" className="skill-slash-list" style={{ maxHeight: placement.height }}>{slash.filtered.map(skill => <SkillMenus key={skill.id} skill={skill} disabled={disabled} onAction={(action, target) => { slash.dismiss(); onAction(action, target) }}><button type="button" role="option" id={`${slash.listId}-${skill.id}`} aria-selected={slash.activeSkill?.id === skill.id} disabled={disabled || active.length >= 10 && !active.includes(skill.id)} className="skill-slash-option" onClick={() => slash.pick(skill)}><Scroll size={15}/><span><strong>{skill.name}</strong>{skill.description && <small>{skill.description}</small>}</span>{active.includes(skill.id) && <Check size={13}/>}</button></SkillMenus>)}</div>
+  <div role="listbox" id={slash.listId} aria-label="Installed skills" className="skill-slash-list" style={{ maxHeight: placement.height }}>{slash.filtered.map(skill => <SkillMenus key={skill.id} skill={skill} disabled={disabled} onAction={(action, target) => { slash.dismiss(); onAction(action, target) }}><TooltipButton tooltip={active.length >= 10 && !active.includes(skill.id) ? 'Turn off a skill before enabling another; up to 10 can be enabled' : `Insert ${skill.name} into your message and enable its instructions`} type="button" role="option" id={`${slash.listId}-${skill.id}`} aria-selected={slash.activeSkill?.id === skill.id} disabled={disabled || active.length >= 10 && !active.includes(skill.id)} className="skill-slash-option" onClick={() => slash.pick(skill)}><Scroll size={15}/><span><strong>{skill.name}</strong>{skill.description && <small>{skill.description}</small>}</span>{active.includes(skill.id) && <Check size={13}/>}</TooltipButton></SkillMenus>)}</div>
   {!slash.filtered.length && <p className="skill-help">No matching installed skills.</p>}
   {active.length >= 10 && <p className="skill-help">Turn off a skill in + → Skills to enable another.</p>}
  </div>

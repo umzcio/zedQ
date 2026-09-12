@@ -10,7 +10,8 @@
 .chat-queue-copy { display: grid; gap: 3px; flex: 1; min-width: 0; text-align: left; padding: 5px 0; }
 .chat-queue-copy strong { font-size: 12px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-queue-copy small { font-size: 10px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-queue-item > button:last-child { width: 26px; height: 26px; }
+.chat-queue-item > button:last-child ,
+.chat-queue-item >.zq-tooltip-disabled:last-child>button { width: 26px; height: 26px; }
 .chat-queue-editor { width: min(540px,calc(100vw - 32px)); }
 .chat-queue-editor textarea { min-height: 140px; max-height: 50vh; resize: vertical; font-size: 13px; line-height: 1.6; }
 .chat-queue-context { font-size: 11px; line-height: 1.6; color: var(--muted); padding-top: 8px; }
@@ -28,4 +29,6 @@
 .chat-interaction-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; justify-content: flex-end; }
 .chat-interaction-actions button { height: 29px; padding: 0 9px; font-size: 11px; }
 
-.chat-interaction > header > button { width: 24px; height: 24px; margin: -3px -4px -3px 0; }
+.chat-interaction > header > button ,
+
+.chat-interaction > header >.zq-tooltip-disabled>button { width: 24px; height: 24px; margin: -3px -4px -3px 0; }

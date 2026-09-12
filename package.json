@@ -15,7 +15,8 @@
     "check:runtime": "npm run check:runtime -w @zq/desktop",
     "modules:keygen": "node scripts/module-keygen.mjs",
     "modules:build": "node scripts/build-modules.mjs",
-    "typecheck": "tsc --noEmit -p apps/desktop/tsconfig.json"
+    "typecheck": "tsc --noEmit -p apps/desktop/tsconfig.json",
+    "test:ui": "node --test packages/ui/tooltip.test.cjs"
   },
   "packageManager": "npm@11.17.0"
 }

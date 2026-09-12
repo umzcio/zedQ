@@ -1,3 +1,4 @@
+import { TooltipButton } from '@zq/ui'
 import { useRef, useState } from 'react'
 import type { ChatSkill } from '@zq/module-api'
 import { Plus, UploadSimple, NotePencil, Info, Scroll, CaretRight, Check, GearSix, MagnifyingGlass } from '@phosphor-icons/react'
@@ -11,7 +12,7 @@ export default function ComposerAddMenu({ skills, selected, inherited, inherited
  const active = (selected ?? inherited).filter(id => skills.some(skill => skill.id === id))
  function choose(run: () => void, dialog = false) { opening.current = dialog; onOpenChange(false); run() }
  function toggle(id: string) { if (skillDisabled) return; onChange(active.includes(id) ? active.filter(value => value !== id) : active.length < 10 ? [...active, id] : active) }
- return <DropdownMenu open={open && !disabled} onOpenChange={value => { onOpenChange(value); if (!value) setSubOpen(false) }}><DropdownMenuTrigger asChild><button type="button" className="chat-attach" aria-label={open ? 'Close attachments menu' : 'Add attachments'} title="Add attachments and skills" disabled={disabled}><Plus size={21}/></button></DropdownMenuTrigger><DropdownMenuContent side="top" align="start" className="composer-add-menu" aria-label="Add attachments and skills" onCloseAutoFocus={event => { if (opening.current) { event.preventDefault(); opening.current = false } }}>
+ return <DropdownMenu open={open && !disabled} onOpenChange={value => { onOpenChange(value); if (!value) setSubOpen(false) }}><DropdownMenuTrigger asChild><TooltipButton type="button" className="chat-attach" aria-label={open ? 'Close attachments menu' : 'Add attachments'} tooltip="Add files, notes, or skills; inspect message context and tool approvals" disabled={disabled}><Plus size={21}/></TooltipButton></DropdownMenuTrigger><DropdownMenuContent side="top" align="start" className="composer-add-menu" aria-label="Add attachments and skills" onCloseAutoFocus={event => { if (opening.current) { event.preventDefault(); opening.current = false } }}>
   <DropdownMenuItem onSelect={() => choose(onUpload)}><UploadSimple size={17}/><span>Upload files<small>Images, PDFs, text &amp; code</small></span></DropdownMenuItem>
   <DropdownMenuItem onSelect={() => choose(onNotes, true)}><NotePencil size={17}/>Add from Notes</DropdownMenuItem>
   <DropdownMenuSub open={subOpen} onOpenChange={setSubOpen}><DropdownMenuSubTrigger className="composer-skills-subtrigger" disabled={skillDisabled}><Scroll size={17}/><span>Skills</span>{active.length > 0 && <small>{active.length} enabled</small>}<CaretRight size={13}/></DropdownMenuSubTrigger><DropdownMenuSubContent className="composer-skills-submenu" aria-label="Choose skills">

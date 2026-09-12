@@ -1,3 +1,4 @@
+import {TooltipButton} from '@zq/ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import App from './App'
 import type { LoadedModule } from './module-loader'
@@ -47,7 +48,7 @@ export default function DesktopRoot({modules}:{modules:LoadedModule[]}){
    if(activeClose.current===id)window.zq.finishClose(id)
   }catch(e){if(activeClose.current===id){setClosing(false);window.zq.finishClose(id,e instanceof Error?e.message:'Could not save the latest changes.')}}
  }),[error])
- if(error)return <div className="startup-state"><h1>Couldn’t open your workspace</h1><p>{error}</p><p>Your saved files have not been reset.</p><button onClick={()=>location.reload()}>Try again</button></div>
+ if(error)return <div className="startup-state"><h1>Couldn’t open your workspace</h1><p>{error}</p><p>Your saved files have not been reset.</p><TooltipButton tooltip="Try opening your saved workspace again" onClick={()=>location.reload()}>Try again</TooltipButton></div>
  if(!loaded)return <div className="startup-state" role="status">Opening zQ…</div>
  return <><div inert={closing}><App modules={modules} onWorkspaceFlush={flushWorkspace} closing={closing} onFileFlush={registerFileFlush} initialState={loaded.workspace} initialFiles={loaded.files} onSnapshot={save} onFilesChange={trackFiles} saveStatus={status}/></div>{closing&&<div className="closing-overlay" role="status">Saving your workspace…</div>}</>
 }

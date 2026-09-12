@@ -13,7 +13,7 @@ export function RenameNoteDialog({note,onClose,onSave,disabled=false}:{note:Pick
   <DialogTitle>Rename note</DialogTitle><DialogDescription>Give this note a name you’ll recognize.</DialogDescription>
   <form onSubmit={event=>{event.preventDefault();if(!disabled&&title.trim())onSave(note.id,title.trim())}}>
    <label htmlFor="rename-note-title">Name</label><Input ref={input} id="rename-note-title" aria-label="Note name" value={title} maxLength={1024} onChange={event=>setTitle(event.target.value)} disabled={disabled}/>
-   <div className="dialog-actions"><Button type="button" variant="ghost" onClick={onClose} disabled={disabled}>Cancel</Button><Button type="submit" className="primary-button" disabled={disabled||!title.trim()}>Rename</Button></div>
+   <div className="dialog-actions"><Button title="Close without renaming the note" type="button" variant="ghost" onClick={onClose} disabled={disabled}>Cancel</Button><Button title={title.trim()?'Save this note name':'Enter a name to rename the note'} type="submit" className="primary-button" disabled={disabled||!title.trim()}>Rename</Button></div>
   </form>
  </DialogContent></Dialog>
 }

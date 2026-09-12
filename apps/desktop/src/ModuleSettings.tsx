@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { unwrap, type ModuleStatus } from '@zq/module-api'
 import {
- Button, Input, Dialog, DialogContent, DialogTitle, DialogDescription,
+ ControlTooltip, Button, Input, Dialog, DialogContent, DialogTitle, DialogDescription,
  ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem,
  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@zq/ui'
@@ -15,7 +15,7 @@ function ModuleRow({row,disabled,onRollback,onDownload}:{row:ModuleStatus;disabl
  function closeMenu(event:Event){if(openingDialog.current){event.preventDefault();openingDialog.current=false}}
  return <ContextMenu><ContextMenuTrigger asChild><div ref={rowRef} className="settings-resource-row module-version-row" tabIndex={0}>
   <span className="settings-resource-icon"><Icon size={20} weight="light"/></span>
-  <div className="settings-resource-copy"><strong>{row.title}</strong><span>{row.version}{row.source==='bundled'?' · Included with zQ':''}</span>{row.pendingVersion&&<small className="module-update-pending">{row.pendingVersion} ready for next launch</small>}{row.error&&<small className="module-update-error" role="alert">{row.error}</small>}</div>
+  <div className="settings-resource-copy"><strong>{row.title}</strong><ControlTooltip content={`Running ${row.title} ${row.version}. ${row.source==='bundled'?'Included with this zQ release.':'Loaded from a signed module update.'}`}><span tabIndex={0}>{row.version}{row.source==='bundled'?' · Included with zQ':''}</span></ControlTooltip>{row.pendingVersion&&<ControlTooltip content="This signed update will activate after you quit and reopen zQ"><small tabIndex={0} className="module-update-pending">{row.pendingVersion} ready for next launch</small></ControlTooltip>}{row.error&&<small className="module-update-error" role="alert">{row.error}</small>}</div>
   <DropdownMenu><DropdownMenuTrigger asChild><Button ref={actionsRef} variant="ghost" size="icon" className="settings-more-button" aria-label={`Actions for ${row.title}`} disabled={disabled}><DotsThree size={20}/></Button></DropdownMenuTrigger><DropdownMenuContent align="end" onCloseAutoFocus={closeMenu}>
    <DropdownMenuItem disabled={rollbackDisabled} onSelect={onRollback}><ArrowCounterClockwise size={15}/>Roll back {row.title}</DropdownMenuItem>
    <DropdownMenuItem disabled={disabled} onSelect={()=>download(actionsRef.current)}><DownloadSimple size={15}/>Install update from URL…</DropdownMenuItem>
@@ -50,7 +50,7 @@ export default function ModuleSettings({closing}:{closing:boolean}){
  const disabled=closing||busy||loading
  return <section id="modules">
   <div className="settings-panel-header module-settings-heading"><div><h2>Modules</h2><p>Manage installed modules and updates.</p></div>
-   <DropdownMenu><DropdownMenuTrigger asChild><Button ref={installRef} variant="outline" disabled={disabled}><Package size={16}/>Install update…<CaretDown size={13}/></Button></DropdownMenuTrigger><DropdownMenuContent align="end" onCloseAutoFocus={event=>{if(openingDialog.current){event.preventDefault();openingDialog.current=false}}}>
+   <DropdownMenu><DropdownMenuTrigger asChild><Button tooltip="Choose a signed module update from a file or HTTPS link" ref={installRef} variant="outline" disabled={disabled}><Package size={16}/>Install update…<CaretDown size={13}/></Button></DropdownMenuTrigger><DropdownMenuContent align="end" onCloseAutoFocus={event=>{if(openingDialog.current){event.preventDefault();openingDialog.current=false}}}>
     <DropdownMenuItem disabled={disabled} onSelect={()=>void action('install')}><Package size={15}/>From file…</DropdownMenuItem>
     <DropdownMenuItem disabled={disabled} onSelect={()=>{openingDialog.current=true;openDownload(installRef.current)}}><DownloadSimple size={15}/>From URL…</DropdownMenuItem>
    </DropdownMenuContent></DropdownMenu>
@@ -60,11 +60,11 @@ export default function ModuleSettings({closing}:{closing:boolean}){
    {rows.map(row=><ModuleRow key={row.id} row={row} disabled={disabled} onRollback={()=>void action('rollback',row.id)} onDownload={openDownload}/>)}
    {!loading&&!listError&&rows.length===0&&<p className="settings-muted">No modules are installed.</p>}
   </div>
-  {listError&&<div className="module-update-error" role="alert"><p>Couldn’t load modules. {listError}</p><Button variant="outline" disabled={disabled} onClick={()=>void load()}>Retry</Button></div>}
+  {listError&&<div className="module-update-error" role="alert"><p>Couldn’t load modules. {listError}</p><Button tooltip="Reload the installed module list" variant="outline" disabled={disabled} onClick={()=>void load()}>Retry</Button></div>}
   {message&&<p className="module-update-status" role="status">{message}</p>}{error&&!download&&<p className="module-update-error" role="alert">{error}</p>}
   <p className="settings-panel-footer">Updates take effect after restarting zQ.</p>
   <Dialog open={download} onOpenChange={open=>{if(!busyRef.current&&!closing)setDownload(open)}}><DialogContent showCloseButton={!busy&&!closing} onCloseAutoFocus={event=>{event.preventDefault();const opener=dialogOpener.current?.isConnected?dialogOpener.current:installRef.current;opener?.focus()}}><DialogTitle>Download module update</DialogTitle><DialogDescription>Paste the HTTPS link to a signed zQ module package.</DialogDescription>
-   <form onSubmit={e=>{e.preventDefault();void action('download')}}><Input aria-label="Module update URL" type="url" placeholder="https://…/chat.zqmodule" value={url} onChange={e=>setUrl(e.target.value)} required disabled={busy||closing}/>{error&&<p role="alert" className="module-update-error">{error}</p>}<div className="dialog-actions"><Button type="button" variant="ghost" disabled={busy||closing} onClick={()=>setDownload(false)}>Cancel</Button><Button type="submit" disabled={busy||closing||!url.trim()}>{busy?'Downloading…':'Download update'}</Button></div></form>
+   <form onSubmit={e=>{e.preventDefault();void action('download')}}><Input aria-label="Module update URL" type="url" placeholder="https://…/chat.zqmodule" value={url} onChange={e=>setUrl(e.target.value)} required disabled={busy||closing}/>{error&&<p role="alert" className="module-update-error">{error}</p>}<div className="dialog-actions"><Button tooltip="Close without downloading an update" type="button" variant="ghost" disabled={busy||closing} onClick={()=>setDownload(false)}>Cancel</Button><Button tooltip={!url.trim()?"Enter an HTTPS link to a signed module package":"Download and verify the update for the next launch"} type="submit" disabled={busy||closing||!url.trim()}>{busy?'Downloading…':'Download update'}</Button></div></form>
   </DialogContent></Dialog>
  </section>
 }

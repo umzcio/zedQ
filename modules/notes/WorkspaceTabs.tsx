@@ -1,3 +1,4 @@
+import { TooltipButton } from '@zq/ui'
 import { NoteMenuItems } from '@zq/ui'
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { FileText, Plus, X, ArrowLeft, ArrowRight } from '@phosphor-icons/react'
@@ -80,7 +81,7 @@ export default function WorkspaceTabs({state,documents,onChange,onNew,onRenameNo
     <div className={`tab ${state.active===key?'selected':''} ${drop?.key===key?`tab-drop-${drop.side}`:''}`}
      ref={node=>{if(node)elements.current.set(key,node);else elements.current.delete(key)}}
      onAuxClick={e=>{if(e.button===1){e.preventDefault();close(key,'one')}}}>
-     <button type="button" draggable={false} role="tab" aria-selected={state.active===key} aria-label={doc.title+(doc.dirty?' — unsaved file changes':'')} title={doc.path??doc.title} tabIndex={state.active===key?0:-1} disabled={disabled}
+     <TooltipButton type="button" draggable={false} role="tab" aria-selected={state.active===key} aria-label={doc.title+(doc.dirty?' — unsaved file changes':'')} tooltip={`Open ${doc.path??doc.title}${doc.dirty?' — unsaved file changes':''}${doc.note?' · F2 to rename':''} · Drag to reorder tabs`} tabIndex={state.active===key?0:-1} disabled={disabled}
       ref={node=>{if(node)buttons.current.set(key,node);else buttons.current.delete(key)}} onClick={()=>{if(suppressClick.current){suppressClick.current=false;return}select(key)}}
       onDoubleClick={()=>{if(doc.note&&!disabled)onRenameNote(doc.note.id)}}
       onDragStart={e=>e.preventDefault()}
@@ -92,8 +93,8 @@ export default function WorkspaceTabs({state,documents,onChange,onNew,onRenameNo
        const target=e.key==='ArrowRight'?state.order[(index+1)%state.order.length]:e.key==='ArrowLeft'?state.order[(index-1+state.order.length)%state.order.length]:e.key==='Home'?state.order[0]:e.key==='End'?state.order.at(-1):null
        if(target){e.preventDefault();select(target);buttons.current.get(target)?.focus()}
        if(e.key==='Delete'){e.preventDefault();close(key,'one');requestAnimationFrame(()=>{const next=state.order[index+1]??state.order[index-1];if(next)buttons.current.get(next)?.focus()})}
-      }}><FileText size={14}/><span className="tab-title">{doc.title}</span>{doc.dirty&&<span aria-hidden="true">•</span>}</button>
-     <button type="button" className="tab-close" aria-label={`Close tab ${doc.title}`} tabIndex={-1} disabled={disabled} draggable={false} onPointerDown={e=>e.stopPropagation()} onClick={()=>close(key,'one')}><X size={12}/></button>
+      }}><FileText size={14}/><span className="tab-title">{doc.title}</span>{doc.dirty&&<span aria-hidden="true">•</span>}</TooltipButton>
+     <TooltipButton type="button" className="tab-close" tooltip={`Close ${doc.title}; keep its content`} aria-label={`Close tab ${doc.title}`} tabIndex={-1} disabled={disabled} draggable={false} onPointerDown={e=>e.stopPropagation()} onClick={()=>close(key,'one')}><X size={12}/></TooltipButton>
     </div>
    </ContextMenuTrigger>{!disabled&&<ContextMenuContent aria-label={`Tab actions for ${doc.title}`} onCloseAutoFocus={e=>{e.preventDefault();if(openingDialog.current){openingDialog.current=false;return}if(buttons.current.has(key))buttons.current.get(key)?.focus()}}>
     {doc.note&&<><NoteMenuItems note={doc.note} onRename={id=>{openingDialog.current=true;onRenameNote(id)}} onTogglePin={onToggleNotePin}/><ContextMenuSeparator/></>}
@@ -106,6 +107,6 @@ export default function WorkspaceTabs({state,documents,onChange,onNew,onRenameNo
     <ContextMenuItem disabled={index===state.order.length-1} onSelect={()=>shift(key,1)}><ArrowRight size={14}/>Move right</ContextMenuItem>
    </ContextMenuContent>}</ContextMenu>
   })}
-  <button type="button" className="icon-button new-tab" aria-label="Open new scratchpad" title="New scratchpad" onClick={onNew} disabled={disabled}><Plus size={15}/></button>
+  <TooltipButton type="button" className="icon-button new-tab" aria-label="Open new scratchpad" tooltip="Create a new scratchpad (⌘N)" onClick={onNew} disabled={disabled}><Plus size={15}/></TooltipButton>
  </div><span className="sr-only" role="status">{announcement}</span></>
 }

@@ -1,3 +1,4 @@
+import { TooltipButton } from '@zq/ui'
 import { useRef, useState } from 'react'
 import { useHost, unwrap, type ChatSnapshot, type Connection, type ModelChoice } from '@zq/module-api'
 import { CaretDown, Check, DotsThree, EyeSlash, MagnifyingGlass, SlidersHorizontal, Star, PencilSimple } from '@phosphor-icons/react'
@@ -37,14 +38,14 @@ export default function ModelPicker({state,choice,disabled,settings,onPick,onPic
  function row(entry:Entry){
   const {connection,model}=entry,isSelected=choice?.connectionId===connection.id&&choice.model===model,isDefault=state.defaultModel?.connectionId===connection.id&&state.defaultModel.model===model
   return <ContextMenu key={`${connection.id}:${model}`}><ContextMenuTrigger asChild disabled={disabled||saving}><div className="curated-model-row" data-selected={isSelected}>
-   <button type="button" data-model-choice aria-label={`Use ${model} from ${connection.name}`} aria-pressed={isSelected} disabled={disabled||saving} onClick={()=>void choose(entry)}>
+   <TooltipButton type="button" data-model-choice aria-label={`Use ${model} from ${connection.name}`} aria-pressed={isSelected} disabled={disabled||saving} onClick={()=>void choose(entry)}>
     <ProviderLogo provider={connection.provider} size={19}/><span className="model-label"><strong>{modelName(model,connection.modelLabels)}</strong>{(favorite(entry)||modelName(model,connection.modelLabels)!==model)&&<small>{favorite(entry)?`${connection.name}${modelName(model,connection.modelLabels)!==model?' · ':''}`:''}{modelName(model,connection.modelLabels)!==model?model:''}</small>}</span>
-    {isDefault&&<span className="model-default-label">Default</span>}{isSelected&&<Check size={15}/>}</button>
-   <DropdownMenu><DropdownMenuTrigger asChild><button type="button" className="model-row-more" aria-label={`Actions for ${model} from ${connection.name}`} disabled={disabled||saving}><DotsThree size={19}/></button></DropdownMenuTrigger><DropdownMenuContent align="end" onCloseAutoFocus={menuClose}>{actions(entry).map(action=><DropdownMenuItem key={action.id} disabled={disabled||saving} onSelect={()=>actionRun(entry,action.id)}>{action.icon}{action.label}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>
+    {isDefault&&<span className="model-default-label">Default</span>}{isSelected&&<Check size={15}/>}</TooltipButton>
+   <DropdownMenu><DropdownMenuTrigger asChild><TooltipButton type="button" className="model-row-more" aria-label={`Actions for ${model} from ${connection.name}`} disabled={disabled||saving}><DotsThree size={19}/></TooltipButton></DropdownMenuTrigger><DropdownMenuContent align="end" onCloseAutoFocus={menuClose}>{actions(entry).map(action=><DropdownMenuItem key={action.id} disabled={disabled||saving} onSelect={()=>actionRun(entry,action.id)}>{action.icon}{action.label}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>
   </div></ContextMenuTrigger><ContextMenuContent aria-label={`Model actions for ${model}`} onCloseAutoFocus={menuClose}>{actions(entry).map(action=><ContextMenuItem key={action.id} disabled={disabled||saving} onSelect={()=>actionRun(entry,action.id)}>{action.icon}{action.label}</ContextMenuItem>)}</ContextMenuContent></ContextMenu>
  }
  return <><Popover open={open} onOpenChange={value=>{setOpen(value);if(value){setQuery('');setError('')}}}>
-  <PopoverTrigger asChild><button ref={trigger} type="button" className="chat-model-trigger curated-model-trigger" aria-label="Choose chat model" disabled={disabled} title={choice?.model}>{selectedConnection&&<ProviderLogo provider={selectedConnection.provider} size={17}/>}<span>{choice?modelName(choice.model,selectedConnection?.modelLabels):'Choose a model'}</span><CaretDown size={12}/></button></PopoverTrigger>
+  <PopoverTrigger asChild><TooltipButton ref={trigger} type="button" className="chat-model-trigger curated-model-trigger" aria-label="Choose chat model" disabled={disabled} tooltip={choice ? `Choose the model for this chat. Current model: ${choice.model}` : 'Choose a connected model for this chat'}>{selectedConnection&&<ProviderLogo provider={selectedConnection.provider} size={17}/>}<span>{choice?modelName(choice.model,selectedConnection?.modelLabels):'Choose a model'}</span><CaretDown size={12}/></TooltipButton></PopoverTrigger>
   <PopoverContent align="end" side="top" className="curated-model-picker" aria-label="Choose chat model" onOpenAutoFocus={e=>{e.preventDefault();search.current?.focus()}} onCloseAutoFocus={e=>{if(openingRename.current){e.preventDefault();return}if(picked.current){e.preventDefault();picked.current=false;onPicked()}}} onKeyDown={e=>{
    if(e.key!=='ArrowDown'&&e.key!=='ArrowUp')return
    const buttons=Array.from(list.current?.querySelectorAll<HTMLButtonElement>('button[data-model-choice]:not(:disabled)')??[])
@@ -60,7 +61,7 @@ export default function ModelPicker({state,choice,disabled,settings,onPick,onPic
     {!favorites.length&&!groups.length&&<p className="model-list-empty">{query?'No matching models.':state.connections.length?'Choose models from your providers to build your list.':'Connect a provider to choose your models.'}</p>}
    </div>
    {choice&&selectedConnection&&!selectedConnection.enabledModels.includes(choice.model)&&<p className="model-hidden-notice">This chat uses a hidden model. You can keep chatting with it.</p>}
-   <button type="button" className="model-picker-manage" onClick={()=>{setOpen(false);settings()}}><SlidersHorizontal size={16}/>Manage providers & models</button>
+   <TooltipButton tooltip="Connect providers and choose which models appear in this menu" type="button" className="model-picker-manage" onClick={()=>{setOpen(false);settings()}}><SlidersHorizontal size={16}/>Manage providers & models</TooltipButton>
   </PopoverContent>
  </Popover>
  {renaming&&<ModelLabelDialog connectionId={renaming.connection.id} model={renaming.model} label={Object.hasOwn(renaming.connection.modelLabels??{},renaming.model)?renaming.connection.modelLabels?.[renaming.model]:undefined} disabled={disabled} onClose={()=>setRenaming(null)} onSaved={()=>{}} onCloseAutoFocus={e=>{e.preventDefault();openingRename.current=false;trigger.current?.focus({preventScroll:true})}}/>}

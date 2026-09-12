@@ -3,7 +3,7 @@ import { useRef, useState } from 'react'
 import { ProviderLogo } from './ProviderLogo'
 import { ModelChecklist } from './ModelChecklist'
 import { bedrockRegions, bedrockEndpoint, bedrockRegion } from './bedrock-regions'
-import { Button, Dialog, DialogContent, DialogTitle, DialogDescription, Input, SelectField } from '@zq/ui'
+import { TooltipButton, Button, Dialog, DialogContent, DialogTitle, DialogDescription, Input, SelectField } from '@zq/ui'
 
 export const connectionProviders: { value: ProviderKind; label: string; legacy?: boolean }[] = [
  { value: 'ollama', label: 'Ollama' }, { value: 'vllm', label: 'vLLM' }, { value: 'openai', label: 'OpenAI' },
@@ -55,13 +55,13 @@ export function ConnectionDialog({ connection, disabled, closing, onClose, onSav
    <DialogDescription>{selecting?'Only the models you select will appear in Chat.':connection?'Update your connection details. Your selected models are kept.':'Connect a provider, then choose the models you want to use.'}</DialogDescription>
    <form onSubmit={event => { event.preventDefault(); void submit(!connection&&!selecting?'test':'save') }}>
     {!selecting&&<>
-    {!connection&&<div className="provider-options" role="group" aria-label="Provider">{connectionProviders.filter(option=>!option.legacy).map(option=><button type="button" key={option.value} aria-pressed={provider===option.value} disabled={blocked} onClick={()=>changeProvider(option.value)}><ProviderLogo provider={option.value} size={23}/><span>{option.label}</span></button>)}</div>}
+    {!connection&&<div className="provider-options" role="group" aria-label="Provider">{connectionProviders.filter(option=>!option.legacy).map(option=><TooltipButton tooltip={`Set up a connection to ${option.label}`} type="button" key={option.value} aria-pressed={provider===option.value} disabled={blocked} onClick={()=>changeProvider(option.value)}><ProviderLogo provider={option.value} size={23}/><span>{option.label}</span></TooltipButton>)}</div>}
     <label htmlFor="connection-name">Name<Input ref={nameInput} id="connection-name" value={name} disabled={blocked} maxLength={120} required onChange={event => { setName(event.target.value); resetResult() }}/></label>
     {selfHosted && <label htmlFor="connection-endpoint">Endpoint<Input id="connection-endpoint" type="url" placeholder={provider === 'ollama' ? ollamaEndpoint : 'https://your-server/v1'} value={baseUrl} disabled={blocked} required onChange={event => { setBaseUrl(event.target.value); resetResult() }}/></label>}
-    {provider === 'bedrock' && <div className="connection-region-field"><label>AWS region<SelectField label="AWS region" className="connection-region-select" value={bedrockRegion(baseUrl)} disabled={blocked} onValueChange={region=>{setBaseUrl(bedrockEndpoint(region));setSelectedModels([]);resetResult()}} options={bedrockRegions.map(([value,label])=>({value,label:`${label} · ${value}`}))}/></label><p className="connection-field-hint">Choose the region for your Bedrock API key and models.</p></div>}
+    {provider === 'bedrock' && <div className="connection-region-field"><label>AWS region<SelectField tooltip="Choose the AWS region matching your Bedrock API key and models" label="AWS region" className="connection-region-select" value={bedrockRegion(baseUrl)} disabled={blocked} onValueChange={region=>{setBaseUrl(bedrockEndpoint(region));setSelectedModels([]);resetResult()}} options={bedrockRegions.map(([value,label])=>({value,label:`${label} · ${value}`}))}/></label><p className="connection-field-hint">Choose the region for your Bedrock API key and models.</p></div>}
     {provider !== 'ollama' && <div className="connection-key-field"><label htmlFor="connection-key">API key{provider === 'vllm' ? ' (optional)' : ''}<Input id="connection-key" type="password" autoComplete="new-password" spellCheck={false} value={apiKey} placeholder={savedKey ? 'Leave blank to keep saved key' : 'Enter API key'} disabled={blocked || removeApiKey} required={!selfHosted && !savedKey} onChange={event => { setApiKey(event.target.value); resetResult() }}/></label>
      <p className="connection-field-hint">{savedKey ? 'A key is saved. Enter a new key to replace it.' : 'Keys are stored securely on this Mac and are never shown again.'}</p>
-     {provider === 'vllm' && connection?.hasApiKey && <Button className="connection-key-toggle" type="button" variant="ghost" disabled={blocked} onClick={() => { setRemoveApiKey(value => !value); setApiKey(''); resetResult() }}>{removeApiKey ? 'Keep saved key' : 'Remove saved key'}</Button>}
+     {provider === 'vllm' && connection?.hasApiKey && <Button tooltip={removeApiKey ? 'Keep the existing API key when saving' : 'Remove the stored API key when you save this connection'} className="connection-key-toggle" type="button" variant="ghost" disabled={blocked} onClick={() => { setRemoveApiKey(value => !value); setApiKey(''); resetResult() }}>{removeApiKey ? 'Keep saved key' : 'Remove saved key'}</Button>}
      {removeApiKey && <p className="connection-field-hint">The saved key will be removed when you save.</p>}
      {needsKeyChoice && <p className="connection-field-hint">{provider === 'bedrock' ? 'Enter a Bedrock API key for the selected region.' : 'To change the endpoint, enter a new key or remove the saved key.'}</p>}
     </div>}
@@ -70,11 +70,11 @@ export function ConnectionDialog({ connection, disabled, closing, onClose, onSav
     {error && <p className="chat-error" role="alert">{error}</p>}
     {!selecting&&models!==null&&<p className="connection-result" role="status">Connected · {models.length} models available</p>}
     <div className="connection-dialog-actions">
-     {connection&&<Button type="button" variant="outline" disabled={blocked||!valid} onClick={()=>void submit('test')}>{busy==='test'?'Testing…':'Test connection'}</Button>}
-     {selecting&&<Button type="button" variant="ghost" disabled={blocked} onClick={()=>setSelecting(false)}>Back</Button>}
+     {connection&&<Button type="button" variant="outline" disabled={blocked||!valid} tooltip={!valid ? 'Complete the connection details before testing' : 'Check this provider connection and fetch its available models'} onClick={()=>void submit('test')}>{busy==='test'?'Testing…':'Test connection'}</Button>}
+     {selecting&&<Button type="button" variant="ghost" disabled={blocked} tooltip="Return to the provider connection details" onClick={()=>setSelecting(false)}>Back</Button>}
      <span/>
      <Button type="button" variant="ghost" disabled={blocked} onClick={close}>Cancel</Button>
-     <Button type="submit" disabled={blocked||!valid}>{busy==='test'?'Connecting…':busy==='save'?'Saving…':connection?'Save changes':selecting?`Add provider${selectedModels.length?` · ${selectedModels.length} selected`:''}`:'Connect & choose models'}</Button>
+     <Button tooltip={!valid ? (needsKeyChoice ? 'Update the API key for the new endpoint or region' : 'Enter a name, endpoint, and any required API key') : connection ? 'Save this provider’s connection details' : selecting ? 'Add this provider with the selected models' : 'Test this connection, then choose models for Chat'} type="submit" disabled={blocked||!valid}>{busy==='test'?'Connecting…':busy==='save'?'Saving…':connection?'Save changes':selecting?`Add provider${selectedModels.length?` · ${selectedModels.length} selected`:''}`:'Connect & choose models'}</Button>
     </div>
    </form>
   </DialogContent>
