@@ -182,3 +182,15 @@ test('Google-style tool schemas validate through SDK calls and structured result
  f.output={view:'invalid'};
  await assert.rejects(service.callTool(row.id,'search_threads',{query:'concert'},options),/output.*schema/);
 });
+
+test('legacy Gmail migrates trusted credentials and verifies standard API access before connecting',async t=>{
+ const calls=[];const {service,directory,credentials}=setup(t,{fetchImpl:async(url,init)=>{
+  calls.push(String(url));if(String(url)==='https://accounts.google.com/.well-known/oauth-authorization-server')return Response.json({issuer:'https://accounts.google.com',authorization_endpoint:'https://accounts.google.com/o/oauth2/v2/auth',token_endpoint:'https://oauth2.googleapis.com/token',response_types_supported:['code'],token_endpoint_auth_methods_supported:['client_secret_post'],code_challenge_methods_supported:['S256']});
+  assert.equal(new Headers(init.headers).get('authorization'),'Bearer saved-access');assert.equal(String(url),'https://gmail.googleapis.com/gmail/v1/users/me/profile');return Response.json({emailAddress:'fixture@example.test'});
+ }});
+ const old='https://gmailmcp.googleapis.com/mcp/v1',url='https://gmail.googleapis.com/gmail/v1';
+ const id=crypto.randomUUID();fs.writeFileSync(path.join(directory,'mcp-connectors.json'),JSON.stringify({version:1,connectors:[{id,name:'My mail',catalogId:'gmail',url:old,clientId:'saved-client',authType:'oauth',redirectPort:43187,redirectHost:'127.0.0.1',hasClientSecret:true,revision:1,tools:[]}]}));
+ const secrets=new SecretStore(credentials,id);await secrets.set('clientSecret',{value:'saved-secret',url:old,clientId:'saved-client',issuer:'https://accounts.google.com',tokenEndpoint:'https://oauth2.googleapis.com/token'});await secrets.set('tokens',{access_token:'saved-access',refresh_token:'saved-refresh',resourceUrl:old,issuer:'https://accounts.google.com',scope:'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose',expiresAt:Date.now()+3600000});
+ const migrated=new ConnectorService({directory,credentials,fetchImpl:service.fetchImpl,openExternal:async()=>{throw Error('Saved authorization must not open a browser')}});t.after(()=>migrated.close());assert.equal(migrated.list()[0].url,url);
+ await migrated.connect(id);assert.equal(migrated.list()[0].status,'connected');assert.equal(migrated.list()[0].name,'My mail');assert.ok(migrated.list()[0].tools.some(tool=>tool.name==='search_threads'));assert.ok(migrated.list()[0].tools.every(tool=>!tool.enabled));assert.equal((await secrets.get('clientSecret')).url,url);assert.equal((await secrets.get('tokens')).resourceUrl,url);assert.ok(calls.every(url=>!url.includes('mcp')));assert.ok(!fs.readFileSync(path.join(directory,'mcp-connectors.json'),'utf8').includes('saved-access'));
+});

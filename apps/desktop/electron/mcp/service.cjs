@@ -3,7 +3,7 @@ const path=require('node:path');
 const {randomUUID}=require('node:crypto');
 const {Client,StreamableHTTPClientTransport,UnauthorizedError}=require('@modelcontextprotocol/client');
 const {inspectToolSchema,validateToolArguments}=require('./schema.cjs');
-const {isBundledArxiv}=require('./catalog.cjs');
+const {isBundledArxiv,isBundledGmail,LEGACY_GMAIL,GMAIL_API}=require('./catalog.cjs');
 const {NativeOAuthProvider}=require('./oauth.cjs');
 const {ConnectorError,safeError,validUrl,boundedJSON,createSafeFetch,SecretStore}=require('./security.cjs');
 const clone=value=>JSON.parse(JSON.stringify(value));
@@ -18,7 +18,7 @@ class ConnectorService {
  list(){return clone(this.rows.map(row=>({...row,tools:row.tools.map(({outputSchema,...tool})=>tool)})))}
  assertOpen(){if(this.closed)throw new ConnectorError('Connector service is closed.')}
  get(id){this.assertOpen();const row=this.rows.find(r=>r.id===id);if(!row)throw new ConnectorError('Connector no longer exists.');return row}
- validateInput(input){if(!input||typeof input.name!=='string'||!input.name.trim()||input.name.length>100)throw new ConnectorError('Enter a connector name of 1–100 characters.');const url=validUrl(input.url,this.allowLoopbackHttp).href;
+ validateInput(input){if(!input||typeof input.name!=='string'||!input.name.trim()||input.name.length>100)throw new ConnectorError('Enter a connector name of 1–100 characters.');let url=validUrl(input.url,this.allowLoopbackHttp).href;if(input.catalogId==='gmail'&&url===LEGACY_GMAIL&&(input.authType??'oauth')==='oauth')url=GMAIL_API;
   const authType=input.authType??'oauth';if(!['oauth','bearer'].includes(authType))throw new ConnectorError('Choose OAuth or bearer token authentication.');
   const result={name:input.name.trim(),url,authType};
   if(input.catalogId!==undefined){if(typeof input.catalogId!=='string'||!input.catalogId.trim()||input.catalogId.length>64||/[\x00-\x1f]/.test(input.catalogId))throw new ConnectorError('Invalid connector catalog ID.');result.catalogId=input.catalogId.trim()}
@@ -73,11 +73,25 @@ class ConnectorService {
     const listed=await bundled.client.listTools(undefined,{signal:controller.signal,timeout:this.requestTimeoutMs});controller.signal.throwIfAborted();
     const tools=this.normalizeTools(listed.tools,row.tools);if(JSON.stringify(row.tools)!==JSON.stringify(tools))row.revision++;row.tools=tools;row.status='connected';delete row.error;this.commit();return clone(row);
    }
+   if(row.catalogId==='gmail'){
+    if(!isBundledGmail(row))throw new ConnectorError('The bundled Gmail connector requires its original Google API endpoint.');
+    const secrets=new SecretStore(this.credentials,id),secret=await secrets.get('clientSecret'),tokens=await secrets.get('tokens'),changes={};
+    // One-way migration only for the exact trusted Gmail preset and registered client.
+    if(secret?.url===LEGACY_GMAIL&&secret.clientId===row.clientId&&(!secret.issuer||secret.issuer==='https://accounts.google.com')&&(!secret.tokenEndpoint||secret.tokenEndpoint==='https://oauth2.googleapis.com/token'))changes.clientSecret={...secret,url:GMAIL_API};
+    if(tokens?.resourceUrl===LEGACY_GMAIL)changes.tokens=changes.clientSecret&&tokens.issuer==='https://accounts.google.com'?{...tokens,resourceUrl:GMAIL_API}:undefined;
+    if(Object.keys(changes).length)await secrets.transaction(changes,()=>{controller.signal.throwIfAborted();this.commit()});
+   }
    const localHttp=this.allowLoopbackHttp&&new URL(row.url).protocol==='http:';
    const provider=new NativeOAuthProvider({row,secrets:new SecretStore(this.credentials,id),signal:controller.signal,openExternal:this.openExternal,onAuthenticating:()=>{if(this.sessions.get(id)===session){row.status='authenticating';this.emit()}},allowLoopbackHttp:localHttp});session.provider=provider;await provider.start();
    const safeFetch=createSafeFetch({signal:controller.signal,allowLoopbackHttp:localHttp,fetchImpl:this.fetchImpl,timeoutMs:this.requestTimeoutMs,credentialOrigin:new URL(row.url).origin,tokenEndpoint:()=>provider.discovery?.authorizationServerMetadata?.token_endpoint});
    await provider.prepare(safeFetch);
    await require('./google-auth.cjs').prepareGoogleAuthorization({row,provider,fetchImpl:safeFetch,signal:controller.signal});
+   if(isBundledGmail(row)){
+    const {gmailAccessToken}=require('./google-auth.cjs');
+    const bundled=await require('./gmail.cjs').createGmailSession({signal:controller.signal,fetchImpl:this.fetchImpl,getToken:force=>gmailAccessToken(provider,this.fetchImpl,force)});Object.assign(session,{client:bundled.client,bundledClose:bundled.close});
+    await bundled.verifyAccess();const listed=await bundled.client.listTools(undefined,{signal:controller.signal,timeout:this.requestTimeoutMs});controller.signal.throwIfAborted();
+    const tools=this.normalizeTools(listed.tools,row.tools);if(JSON.stringify(row.tools)!==JSON.stringify(tools))row.revision++;row.tools=tools;row.status='connected';delete row.error;this.commit();return clone(row);
+   }
    const createClient=()=>new Client({name:'zQ',version:'1.0.0'},{jsonSchemaValidator:{getValidator(){throw new ConnectorError('Connector schema validation requires its bounded worker.')}},listMaxPages:16,listChanged:{tools:{autoRefresh:false,debounceMs:0,onChanged:()=>{if(this.sessions.get(id)!==session||row.status!=='connected')return;row.revision++;row.tools.forEach(t=>t.enabled=false);void this.disconnect(id).then(()=>this.commit()).catch(()=>{})}}}});
    // OAuth redirects unwind connect; finishAuth and reconnect use fresh SDK state.
    let client=createClient(),transport=new StreamableHTTPClientTransport(new URL(row.url),{authProvider:provider.transportAuth(),fetch:safeFetch,onInsufficientScope:'throw'});Object.assign(session,{client,transport});

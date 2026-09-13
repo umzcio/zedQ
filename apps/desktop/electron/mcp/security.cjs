@@ -6,13 +6,13 @@ function safeError(error) {
  if(/Unauthorized|OAuth|Issuer|Registration|InsufficientScope/.test(error?.constructor?.name||''))return new ConnectorError('Connector authorization failed or expired. Reconnect; check the token, client ID and provider registration requirements.');
  return new ConnectorError('Connector request failed. Check the server URL and connection, then reconnect.');
 }
-function validUrl(value,allowLoopbackHttp=false,allowOAuthParams=false) {
+function validUrl(value,allowLoopbackHttp=false,allowOAuthParams=false,allowedQueryParams=[]) {
  let url;try{url=new URL(value)}catch{throw new ConnectorError('Enter a valid HTTPS server URL.')}
  if(url.username||url.password||url.hash)throw new ConnectorError('Server URLs cannot contain credentials or fragments.');
  if(url.protocol!=='https:'&&!(allowLoopbackHttp&&url.protocol==='http:'&&['127.0.0.1','[::1]','localhost'].includes(url.hostname)))throw new ConnectorError('Remote connectors require HTTPS.');
  if(url.href.length>2048)throw new ConnectorError('Server URL is too long.');
  // URL query secrets cannot be protected by Keychain once stored as metadata.
- for(const name of url.searchParams.keys())if(!allowOAuthParams&&/token|secret|password|api.?key|authorization|code/i.test(name))throw new ConnectorError('Server URLs cannot contain credentials. Use browser authorization.');
+ for(const name of url.searchParams.keys())if(!allowOAuthParams&&!allowedQueryParams.includes(name)&&/token|secret|password|api.?key|authorization|code/i.test(name))throw new ConnectorError('Server URLs cannot contain credentials. Use browser authorization.');
  return url;
 }
 function boundedJSON(value,limit,label='Connector data') {
@@ -20,9 +20,9 @@ function boundedJSON(value,limit,label='Connector data') {
  if(!encoded||Buffer.byteLength(encoded)>limit)throw new ConnectorError(`${label} exceeds the supported size limit.`);
  return encoded;
 }
-function createSafeFetch({signal,allowLoopbackHttp=false,fetchImpl=fetch,timeoutMs=60000,maxBytes=2*1024*1024,credentialOrigin,tokenEndpoint=()=>undefined}) {
+function createSafeFetch({signal,allowLoopbackHttp=false,fetchImpl=fetch,timeoutMs=60000,maxBytes=2*1024*1024,allowedQueryParams=[],credentialOrigin,tokenEndpoint=()=>undefined}) {
  return async(input,init={})=>{
-  const url=validUrl(input instanceof Request?input.url:String(input),allowLoopbackHttp);
+  const url=validUrl(input instanceof Request?input.url:String(input),allowLoopbackHttp,false,allowedQueryParams);
   if(credentialOrigin){
    const headers=new Headers(init.headers??(input instanceof Request?input.headers:undefined)),authorization=headers.get('authorization');
    if(authorization&&/^Bearer /i.test(authorization)&&url.origin!==credentialOrigin)throw new ConnectorError('Connector credential origin does not match its saved endpoint.');

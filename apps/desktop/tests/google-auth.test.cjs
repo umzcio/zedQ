@@ -80,3 +80,14 @@ test('known Google origins reject noncanonical MCP URLs before anonymous discove
   let requests=0;await assert.rejects(prepareGoogleAuthorization({row:{url},provider:{},fetchImpl:()=>{requests++;throw Error('Unexpected fetch')}}),/exact.*URL|canonical/i);assert.equal(requests,0);
  }
 });
+
+test('standard Gmail API authorization skips MCP discovery and renews tokens without a browser',async t=>{
+ const url='https://gmail.googleapis.com/gmail/v1';const f=await fixture(t,{rowChanges:{url}});
+ assert.equal(await call(f),true);assert.equal(f.opened.length,1);assert.equal(f.opened[0].searchParams.has('resource'),false);
+ assert.ok(f.requests.every(r=>!r.url.includes('mcp')&&!r.url.includes('oauth-protected-resource')));
+ const {gmailAccessToken}=require('../electron/mcp/google-auth.cjs');
+ f.provider.savedTokens.expiresAt=Date.now()-1;
+ const token=await gmailAccessToken(f.provider,f.fetchImpl);assert.equal(token,'fixture-access-token');assert.equal(f.opened.length,1);assert.equal(f.requests.at(-1).init.body.get('grant_type'),'refresh_token');
+ await gmailAccessToken(f.provider,f.fetchImpl,true);assert.equal(f.opened.length,1);assert.equal(f.requests.at(-1).init.body.get('grant_type'),'refresh_token');
+ delete f.provider.savedTokens.refresh_token;await assert.rejects(gmailAccessToken(f.provider,f.fetchImpl,true),/Reconnect/);assert.equal(f.opened.length,1);
+});
