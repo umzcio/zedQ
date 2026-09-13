@@ -19,7 +19,9 @@ function connectorTools(service,ids){
  for(const id of ids){
   const row=rows.find(r=>r.id===id);if(!row)throw Error('A selected connector was removed. Update this chat’s connectors.');
   if(row.status!=='connected')throw Error(`Connect ${row.name} in Settings → Connectors before using it.`);
-  for(const tool of row.tools.filter(t=>t.enabled)){
+  const enabledTools=row.tools.filter(t=>t.enabled);
+  if(!enabledTools.length)throw Error(`${row.name} has no tools enabled. Open Settings → Connectors → Manage tools and enable the tools you want to use.`);
+  for(const tool of enabledTools){
    const schema=tool.inputSchema;
    if(!schema||typeof schema!=='object'||schema.type!=='object'||Buffer.byteLength(JSON.stringify(schema))>24000)throw Error(`The ${tool.name} tool has an unsupported input schema.`);
    try{inspectToolSchema(schema)}catch{throw Error(`The ${tool.name} tool uses an unsupported input schema.`)}

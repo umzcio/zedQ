@@ -97,3 +97,7 @@ before supplying the SDK discovery cache. Only that verified profile uses the
 public-client discovery exception and omits the OAuth `resource` parameter in
 favor of Microsoft's delegated scopes. Other servers retain ordinary SDK issuer
 validation. Changes to the pinned Work IQ authority or endpoints fail closed.
+
+A connected session with zero enabled tools is not ready for chat. The UI labels
+that state “Connected · Choose tools”; sending with that connector selected fails
+before model execution or message/draft consumption, with a path to tool settings.
