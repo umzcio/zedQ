@@ -8,7 +8,7 @@ test('Calendar lists recurring instances in an explicit timezone-aware window wi
  const result=output(await f.call('list_events',{calendarId:'person@example.test',timeMin:'2026-09-13T00:00:00-05:00',timeMax:'2026-09-14T00:00:00-05:00',pageToken:'opaque+/='}));assert.equal(result.items[0].summary,'Meeting');assert.equal(result.timeZone,'America/Chicago');assert.equal(result.nextPageToken,'more');assert.equal(f.calls[0].url.pathname,'/calendar/v3/calendars/person%40example.test/events');assert.equal(f.calls[0].url.searchParams.get('singleEvents'),'true');assert.equal(f.calls[0].url.searchParams.get('orderBy'),'startTime');assert.equal(f.calls[0].url.searchParams.get('pageToken'),'opaque+/=');
  assert.equal((await f.call('list_events',{calendarId:'../settings',timeMin:'2026-09-13'})).isError,true);assert.equal(f.calls.length,1);
  assert.equal((await f.call('list_events',{timeMin:'2026-09-14T00:00:00Z',timeMax:'2026-09-13T00:00:00Z'})).isError,true);assert.equal(f.calls.length,1);
- const tools=(await f.client.listTools()).tools;assert.ok(tools.every(t=>t.annotations.readOnlyHint));
+ const tools=(await f.client.listTools()).tools;assert.ok(tools.filter(t=>!['create_event','reschedule_event','cancel_event'].includes(t.name)).every(t=>t.annotations.readOnlyHint));
 });
 test('Calendar availability uses freebusy without creating events',async t=>{
  const f=await fixture(t,'google-calendar',()=>Response.json({calendars:{primary:{busy:[]}}}));output(await f.call('free_busy',{calendarIds:['primary'],timeMin:'2026-09-13T00:00:00Z',timeMax:'2026-09-14T00:00:00Z'}));assert.equal(f.calls[0].url.pathname,'/calendar/v3/freeBusy');assert.deepEqual(JSON.parse(f.calls[0].init.body).items,[{id:'primary'}]);

@@ -95,7 +95,7 @@ test('standard Gmail API authorization skips MCP discovery and renews tokens wit
 test('direct Calendar and Drive authorize and refresh independently on their shared API origin',async t=>{
  const {googleAccessToken}=require('../electron/mcp/google-auth.cjs');
  for(const [catalogId,url,scopes]of[
-  ['google-calendar','https://www.googleapis.com/calendar/v3',['calendar.calendarlist.readonly','calendar.events.freebusy','calendar.events.readonly']],
+  ['google-calendar','https://www.googleapis.com/calendar/v3',['calendar.calendarlist.readonly','calendar.events.freebusy','calendar.events.readonly','calendar.events']],
   ['google-drive','https://www.googleapis.com/drive/v3',['drive.readonly','drive.file']],
  ]){const required=scopes.map(s=>'https://www.googleapis.com/auth/'+s);const f=await fixture(t,{rowChanges:{catalogId,url},supportedScopes:required});await call(f);assert.equal(f.opened[0].searchParams.has('resource'),false);assert.deepEqual(f.opened[0].searchParams.get('scope').split(' '),required);assert.ok(f.requests.every(r=>!r.url.includes('oauth-protected-resource')));await googleAccessToken(f.provider,f.fetchImpl,true);assert.equal(f.opened.length,1);assert.equal(f.provider.savedTokens.resourceUrl,url);}
 });
@@ -119,4 +119,12 @@ test('revoked Google refresh grant requires sign-in while a temporary token outa
   const fetchImpl=f.fetchImpl;f.fetchImpl=(url,init)=>String(url).endsWith('/token')?Promise.resolve(Response.json({error:temporary?'server_error':'invalid_grant'},{status:temporary?503:400})):fetchImpl(url,init);
   await assert.rejects(call(f));assert.equal(f.provider.needsSignIn===true,!temporary);assert.equal(f.opened.length,0);assert.equal(f.provider.server,undefined);
  }
+});
+
+test('Calendar keeps saved read-only access during background reconnect but explicitly requests edit access on Connect',async t=>{
+ const read=['calendar.calendarlist.readonly','calendar.events.freebusy','calendar.events.readonly'].map(s=>'https://www.googleapis.com/auth/'+s),edit='https://www.googleapis.com/auth/calendar.events';
+ const f=await fixture(t,{interactive:false,rowChanges:{catalogId:'google-calendar',url:'https://www.googleapis.com/calendar/v3'},supportedScopes:[...read,edit],tokens:{access_token:'read-token',refresh_token:'read-refresh',issuer:'https://accounts.google.com',expiresAt:Date.now()+3600000,scope:read.join(' ')}});
+ await call(f);assert.equal(f.opened.length,0);assert.equal(f.provider.savedTokens.access_token,'read-token');
+ const explicit=await fixture(t,{rowChanges:{catalogId:'google-calendar',url:'https://www.googleapis.com/calendar/v3'},supportedScopes:[...read,edit],tokens:{access_token:'read-token',refresh_token:'read-refresh',issuer:'https://accounts.google.com',expiresAt:Date.now()+3600000,scope:read.join(' ')}});
+ await call(explicit);assert.equal(explicit.opened.length,1);assert.ok(explicit.opened[0].searchParams.get('scope').split(' ').includes(edit));
 });

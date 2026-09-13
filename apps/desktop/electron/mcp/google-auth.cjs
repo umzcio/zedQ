@@ -41,7 +41,10 @@ async function prepareGoogleAuthorization({row,provider,fetchImpl=globalThis.fet
  if(!row.clientId||!provider.manualSecret?.value)throw new ConnectorError('Enter the Google OAuth web client ID and client secret, enable the required Google API in that Cloud project, then connect.');
  if(!['127.0.0.1','localhost'].includes(row.redirectHost??'127.0.0.1')||!Number.isInteger(row.redirectPort)||row.redirectPort<1||row.redirectPort>65535||provider.redirectUrl!==`http://${row.redirectHost??'127.0.0.1'}:${row.redirectPort}/oauth/callback`)throw new ConnectorError('Configure a fixed local callback port and register its exact callback URL in your Google OAuth web client, then connect.');
  signal?.throwIfAborted();
- const required=SCOPES[entry.id].map(scope=>PREFIX+scope),server=new URL(row.url);
+ const required=SCOPES[entry.id].map(scope=>PREFIX+scope);
+ // Read-only grants remain usable on launch; only explicit Connect requests edits.
+ if(entry.id==='google-calendar'&&direct&&provider.interactive)required.push(PREFIX+'calendar.events');
+ const server=new URL(row.url);
  const allowed=new Set([
   `${server.origin}/.well-known/oauth-protected-resource${server.pathname}`,
   `${server.origin}/.well-known/oauth-protected-resource`,

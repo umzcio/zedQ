@@ -12,37 +12,43 @@ const paging={pageSize:z.number().int().min(1).max(25).default(10),pageToken:z.s
 const windowSchema={timeMin:dateTime,timeMax:dateTime};
 const checkWindow=args=>{if(Date.parse(args.timeMin)>=Date.parse(args.timeMax))throw new ConnectorError('The end of the time window must be after its start.');};
 const FILE_FIELDS='id,name,mimeType,size,modifiedTime,webViewLink,description';
-async function createWorkspaceSession({catalogId,signal,fetchImpl=globalThis.fetch,getToken}){
+async function createWorkspaceSession({catalogId,signal,fetchImpl=globalThis.fetch,getToken,calendarWriteAccess=()=>false}){
  const calendar=catalogId==='google-calendar';if(!calendar&&catalogId!=='google-drive')throw new ConnectorError('Unknown Google API connector.');
  const name=calendar?'Google Calendar':'Google Drive',base=calendar?'https://www.googleapis.com/calendar/v3/':'https://www.googleapis.com/drive/v3/';
  const controller=new AbortController(),server=new McpServer({name:`zQ ${name}`,version:'1.0.0'}),client=new Client({name:'zQ',version:'1.0.0'});let closing;
  const [ct,st]=InMemoryTransport.createLinkedPair();
  const close=()=>{if(closing)return closing;controller.abort();signal?.removeEventListener('abort',onAbort);return closing=Promise.allSettled([client.close(),server.close()]).then(()=>undefined)};
  const onAbort=()=>{void close()};signal?.throwIfAborted();signal?.addEventListener('abort',onAbort,{once:true});
- const request=async(route,params,signal,body,bytes=false)=>{
+ const request=async(route,params,signal,body,bytes=false,options={})=>{
   const url=new URL(route,base);if(!url.href.startsWith(base))throw new ConnectorError('Invalid Google API request.');
   for(const [key,value]of Object.entries(params??{}))if(value!==undefined)url.searchParams.set(key,String(value));
   const safe=createSafeFetch({signal,fetchImpl,timeoutMs:20000,maxBytes:1024*1024,allowedQueryParams:['pageToken'],credentialOrigin:'https://www.googleapis.com'});
-  for(let attempt=0;attempt<2;attempt++){
+  const mutation=!!options.method;
+  for(let attempt=0;attempt<(mutation?1:2);attempt++){
    signal.throwIfAborted();const token=await getToken(attempt>0);signal.throwIfAborted();
-   const response=await safe(url,{method:body?'POST':'GET',headers:{Authorization:`Bearer ${token}`,Accept:bytes?'*/*':'application/json',...(body?{'Content-Type':'application/json'}:{})},...(body?{body:boundedJSON(body,32000,'Calendar request')}:{})});
-   if(response.status===401){await response.body?.cancel();if(!attempt)continue;throw new ConnectorError(`Reconnect ${name} to renew authorization.`)}
+   const response=await safe(url,{method:options.method??(body?'POST':'GET'),headers:{Authorization:`Bearer ${token}`,Accept:bytes?'*/*':'application/json',...(body?{'Content-Type':'application/json'}:{}),...options.headers},...(body?{body:boundedJSON(body,32000,'Calendar request')}:{})});
+   if(response.status===401){await response.body?.cancel();if(!attempt&&!mutation)continue;throw new ConnectorError(`Reconnect ${name} to renew authorization.`)}
    if(!response.ok){let data;try{data=await response.json()}catch{}
     if(data?.error?.errors?.some(e=>e.reason==='accessNotConfigured')||data?.error?.details?.some(d=>d.reason==='SERVICE_DISABLED'))throw new ConnectorError(`Enable the ${calendar?'Google Calendar':'Google Drive'} API in your Google Cloud project, then reconnect.`);
+    if(response.status===412)throw new ConnectorError('The event changed after review. Read the updated event and review it again before making changes.');
+    if(mutation&&response.status>=500)throw new ConnectorError('The Calendar change could not be confirmed. Check Google Calendar before continuing. Do not retry automatically.');
     if(response.status===403)throw new ConnectorError(`Google denied access. Reconnect ${name} and approve the requested access. The item may also be outside this account's permissions.`);
     if(response.status===404)throw new ConnectorError('That item was not found or this account cannot access it.');
     if(response.status===429)throw new ConnectorError(`${name} is limiting requests. Try again shortly.`);
     throw new ConnectorError(`${name} could not complete the request. Try again later.`);
    }
+   if(response.status===204)return null;
    return bytes?Buffer.from(await response.arrayBuffer()):response.json();
   }
  };
- const register=(tool,title,description,schema,execute)=>server.registerTool(tool,{title,description,inputSchema:schema.strict(),annotations:read},async(args,ctx)=>{
+ const register=(tool,title,description,schema,execute,annotations=read)=>server.registerTool(tool,{title,description,inputSchema:schema.strict(),annotations},async(args,ctx)=>{
   const combined=AbortSignal.any([controller.signal,ctx.mcpReq.signal,AbortSignal.timeout(60000)]);
-  try{const result=await execute(args,(route,params,body,bytes)=>request(route,params,combined,body,bytes));combined.throwIfAborted();return result?.content?result:{content:[{type:'text',text:boundedJSON(result,90000,'Google API result')}]}}
-  catch(error){return {isError:true,content:[{type:'text',text:combined.aborted?`${name} request cancelled or timed out.`:error instanceof ConnectorError?error.message:`${name} could not complete this request. Try a smaller result.`}]}}
+  try{const result=await execute(args,(route,params,body,bytes,options)=>request(route,params,combined,body,bytes,options));combined.throwIfAborted();return result?.content?result:{content:[{type:'text',text:boundedJSON(result,90000,'Google API result')}]}}
+  catch(error){return {isError:true,content:[{type:'text',text:!annotations.readOnlyHint&&(!(error instanceof ConnectorError)||combined.aborted)?'The Calendar change could not be confirmed. Check Google Calendar before continuing. Do not retry automatically.':combined.aborted?`${name} request cancelled or timed out.`:error instanceof ConnectorError?error.message:`${name} could not complete this request. Try a smaller result.`}]}}
  });
+ let prepareCalendarAction;
  if(calendar){
+  prepareCalendarAction=require('./calendar-actions.cjs').calendarActions({register,request,signal:controller.signal,calendarWriteAccess});
   register('list_calendars','List calendars','List calendars accessible to this account, including IDs, primary status, and time zones. Use the calendar time zone when constructing a day window.',z.object(paging),(args,api)=>api('users/me/calendarList',{maxResults:args.pageSize,pageToken:args.pageToken,fields:'nextPageToken,items(id,summary,timeZone,primary,accessRole)'}));
   const eventsSchema=z.object({calendarId,...windowSchema,...paging,query:z.string().max(2048).optional()});
   const events=(args,api)=>{checkWindow(args);return api(`calendars/${encodeURIComponent(args.calendarId)}/events`,{timeMin:args.timeMin,timeMax:args.timeMax,q:args.query,maxResults:args.pageSize,pageToken:args.pageToken,singleEvents:true,orderBy:'startTime',maxAttendees:10,fields:'summary,timeZone,nextPageToken,items(id,status,summary,description,location,start,end,htmlLink,organizer,attendees,attendeesOmitted,recurringEventId)'})};
@@ -67,6 +73,6 @@ async function createWorkspaceSession({catalogId,signal,fetchImpl=globalThis.fet
    return {content:[{type:'text',text:JSON.stringify({file})},{type:'resource',resource:{uri:`zq-drive://file/${encodeURIComponent(file.name||args.fileId)}`,mimeType:mime||'application/octet-stream',blob:bytes.toString('base64')}}]};
   });
  }
- try{await server.connect(st);await client.connect(ct,{signal:controller.signal,timeout:5000});return {client,close,verifyAccess:()=>request(calendar?'users/me/calendarList':'about',calendar?{maxResults:1,fields:'items(id)'}:{fields:'user(permissionId)'},controller.signal)}}catch(error){await close();throw error}
+ try{await server.connect(st);await client.connect(ct,{signal:controller.signal,timeout:5000});return {client,close,prepareCalendarAction,verifyAccess:()=>request(calendar?'users/me/calendarList':'about',calendar?{maxResults:1,fields:'items(id)'}:{fields:'user(permissionId)'},controller.signal)}}catch(error){await close();throw error}
 }
 module.exports={createWorkspaceSession};
