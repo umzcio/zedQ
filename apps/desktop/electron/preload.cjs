@@ -2,12 +2,14 @@ const { contextBridge, ipcRenderer } = require('electron');
 const invoke = (name, ...args) => ipcRenderer.invoke(name, ...args);
 contextBridge.exposeInMainWorld('zq', Object.freeze({
  platform:process.platform,
+ connectors:{list:()=>invoke('connectors:list'),save:input=>invoke('connectors:save',input),connect:id=>invoke('connectors:connect',id),disconnect:id=>invoke('connectors:disconnect',id),remove:id=>invoke('connectors:remove',id),setTools:input=>invoke('connectors:setTools',input),subscribe:callback=>{const listener=(_,rows)=>callback(rows);ipcRenderer.on('connectors:changed',listener);return()=>ipcRenderer.removeListener('connectors:changed',listener)}},
  clipboard:{writeText:text=>invoke('clipboard:writeText',text)},
  voice:{load:input=>invoke('voice:load',input),save:input=>invoke('voice:save',input),availability:input=>invoke('voice:availability',input),begin:input=>invoke('voice:begin',input),transcribe:input=>invoke('voice:transcribe',input),cancel:input=>invoke('voice:cancel',input)},
  modules:{runtime:()=>invoke('modules:runtime'),list:()=>invoke('modules:list'),install:()=>invoke('modules:install'),download:url=>invoke('modules:download',url),rollback:id=>invoke('modules:rollback',id),recover:(id,version)=>invoke('modules:recover',id,version)},
  attachments:{pick:()=>invoke('attachments:pick'),import:files=>invoke('attachments:import',files),discard:id=>invoke('attachments:discard',id),preview:id=>invoke('attachments:preview',id)},
  artifacts:{document:input=>invoke('artifacts:document',input),status:()=>invoke('artifacts:status'),list:()=>invoke('artifacts:list'),create:input=>invoke('artifacts:create',input),update:input=>invoke('artifacts:update',input),version:input=>invoke('artifacts:version',input),preview:input=>invoke('artifacts:preview',input),save:input=>invoke('artifacts:save',input),importGenerated:input=>invoke('artifacts:importGenerated',input),subscribe:callback=>{const listener=(_,items)=>callback(items);ipcRenderer.on('artifacts:changed',listener);return()=>ipcRenderer.removeListener('artifacts:changed',listener)}},
  chat: {
+  setConversationConnectors:input=>invoke('chat:setConversationConnectors',input),
   enqueueMessage:input=>invoke('chat:enqueueMessage',input),
   updateQueuedMessage:input=>invoke('chat:updateQueuedMessage',input),
   setQueuePaused:input=>invoke('chat:setQueuePaused',input),

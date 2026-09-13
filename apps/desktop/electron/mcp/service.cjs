@@ -1,0 +1,69 @@
+const fs=require('node:fs');
+const path=require('node:path');
+const {randomUUID}=require('node:crypto');
+const {Client,StreamableHTTPClientTransport,UnauthorizedError}=require('@modelcontextprotocol/client');
+const {inspectToolSchema,validateToolArguments}=require('./schema.cjs');
+const {NativeOAuthProvider}=require('./oauth.cjs');
+const {ConnectorError,safeError,validUrl,boundedJSON,createSafeFetch,SecretStore}=require('./security.cjs');
+const clone=value=>JSON.parse(JSON.stringify(value));
+const busy=row=>['connecting','authenticating'].includes(row.status);
+class ConnectorService {
+ constructor({directory,credentials,openExternal,onChange=()=>{},allowLoopbackHttp=false,fetchImpl=fetch,connectTimeoutMs=300000,requestTimeoutMs=60000}){
+  Object.assign(this,{directory,credentials,openExternal,onChange,allowLoopbackHttp,fetchImpl,connectTimeoutMs,requestTimeoutMs});this.sessions=new Map();this.rows=[];this.closed=false;this.locks=new Set();this.file=path.join(directory,'mcp-connectors.json');
+  fs.mkdirSync(directory,{recursive:true,mode:0o700});
+  if(fs.existsSync(this.file)){try{const fd=fs.openSync(this.file,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);let content;try{const stat=fs.fstatSync(fd);if(!stat.isFile()||stat.size>4*1024*1024)throw Error();content=fs.readFileSync(fd)}finally{fs.closeSync(fd)}const saved=JSON.parse(content);if(saved.version!==1||!Array.isArray(saved.connectors)||saved.connectors.length>64)throw Error();this.rows=saved.connectors.map(row=>{const input=this.validateInput(row);if(!/^[a-f0-9-]{36}$/.test(row.id)||!Number.isSafeInteger(row.revision)||row.revision<1)throw Error();return {...input,id:row.id,revision:row.revision,status:'disconnected',tools:this.normalizeTools(row.tools,[],true)}});if(new Set(this.rows.map(r=>r.id)).size!==this.rows.length)throw Error()}catch{throw new ConnectorError('Saved connector settings could not be read. Restore the workspace backup.')}}
+  this.committedRows=clone(this.rows);
+ }
+ list(){return clone(this.rows.map(row=>({...row,tools:row.tools.map(({outputSchema,...tool})=>tool)})))}
+ assertOpen(){if(this.closed)throw new ConnectorError('Connector service is closed.')}
+ get(id){this.assertOpen();const row=this.rows.find(r=>r.id===id);if(!row)throw new ConnectorError('Connector no longer exists.');return row}
+ validateInput(input){if(!input||typeof input.name!=='string'||!input.name.trim()||input.name.length>100)throw new ConnectorError('Enter a connector name of 1–100 characters.');const url=validUrl(input.url,this.allowLoopbackHttp).href;
+  const result={name:input.name.trim(),url};for(const key of ['clientId','clientMetadataUrl'])if(input[key]){if(typeof input[key]!=='string'||input[key].length>2048||/[\x00-\x1f]/.test(input[key]))throw new ConnectorError('Invalid OAuth client settings.');result[key]=input[key].trim()}
+  if(result.clientMetadataUrl){const metadata=validUrl(result.clientMetadataUrl);if(metadata.pathname==='/')throw new ConnectorError('Client metadata URL must have a document path.');result.clientMetadataUrl=metadata.href}return result;
+ }
+ persist(){const bytes=boundedJSON({version:1,connectors:this.rows.map(({status,error,...row})=>row)},4*1024*1024,'Connector settings');const temp=`${this.file}.${randomUUID()}.tmp`;let fd;try{fd=fs.openSync(temp,'wx',0o600);fs.writeFileSync(fd,bytes);fs.fsyncSync(fd);fs.closeSync(fd);fd=undefined;fs.renameSync(temp,this.file);this.committedRows=clone(this.rows)}finally{if(fd!==undefined)fs.closeSync(fd);if(fs.existsSync(temp))fs.unlinkSync(temp)}}
+ emit(){try{this.onChange(this.list())}catch{/* Renderer listeners cannot interrupt durable mutations. */}}
+ commit(){try{this.persist()}catch{this.rows=clone(this.committedRows).map(row=>({...row,status:this.sessions.has(row.id)&&row.status==='connected'?'connected':'disconnected'}));this.emit();throw new ConnectorError('Connector settings could not be saved. Check workspace disk access and try again.')}this.emit()}
+ async save(input){this.assertOpen();const valid=this.validateInput(input);if(input.id){const row=this.get(input.id);if(busy(row)||this.locks.has(row.id))throw new ConnectorError('Connector is busy. Disconnect before editing.');const changed=row.url!==valid.url||row.clientId!==valid.clientId||row.clientMetadataUrl!==valid.clientMetadataUrl;
+   if(changed){this.locks.add(row.id);try{await this.disconnect(row.id);const secrets=new SecretStore(this.credentials,row.id);await secrets.delete('tokens');await secrets.delete('client')}finally{this.locks.delete(row.id)}}
+   Object.assign(row,valid);for(const key of ['clientId','clientMetadataUrl'])if(!valid[key])delete row[key];if(changed){row.tools=[];row.revision++}this.commit();return clone(row);
+  }
+  if(this.rows.length>=64)throw new ConnectorError('A workspace supports up to 64 connectors.');const row={...valid,id:randomUUID(),status:'disconnected',revision:1,tools:[]};this.rows.push(row);this.commit();return clone(row);
+ }
+ normalizeTools(tools,previous=[],restore=false){if(!Array.isArray(tools)||tools.length>256)throw new ConnectorError('Connector exposes more than 256 tools.');boundedJSON(tools,1024*1024,'Tool schemas');const names=new Set();return tools.map(tool=>{
+   if(!tool||typeof tool.name!=='string'||tool.name.length<1||tool.name.length>128||/[\x00-\x1f]/.test(tool.name)||names.has(tool.name))throw new ConnectorError('Connector returned an invalid or duplicate tool name.');names.add(tool.name);
+   if(!tool.inputSchema||tool.inputSchema.type!=='object')throw new ConnectorError('Connector tool requires an object input schema.');boundedJSON(tool.inputSchema,64*1024,'Tool input schema');
+   inspectToolSchema(tool.inputSchema);if(tool.outputSchema)inspectToolSchema(tool.outputSchema);
+   const result={name:tool.name,...(typeof tool.title==='string'?{title:tool.title.slice(0,200)}:{}),description:typeof tool.description==='string'?tool.description.slice(0,16000):'',inputSchema:clone(tool.inputSchema),...(tool.outputSchema?{outputSchema:clone(tool.outputSchema)}:{}),enabled:false,readOnly:restore?tool.readOnly===true:tool.annotations?.readOnlyHint===true};
+   const before=previous.find(t=>t.name===tool.name);result.enabled=restore?tool.enabled===true:!!before?.enabled&&JSON.stringify({...before,enabled:false})===JSON.stringify(result);return result;
+  });
+ }
+ async connect(id){const row=this.get(id);if(this.locks.has(id)||busy(row))throw new ConnectorError('Connector is busy.');if(row.status==='connected')return clone(row);
+  const previous=this.sessions.get(id);const controller=new AbortController(),session={controller};this.sessions.set(id,session);row.status='connecting';delete row.error;this.emit();
+  const timer=setTimeout(()=>controller.abort(),this.connectTimeoutMs);
+  try{
+   if(previous)await this.cleanup(previous);
+   const localHttp=this.allowLoopbackHttp&&new URL(row.url).protocol==='http:';
+   const provider=new NativeOAuthProvider({row,secrets:new SecretStore(this.credentials,id),signal:controller.signal,openExternal:this.openExternal,onAuthenticating:()=>{if(this.sessions.get(id)===session){row.status='authenticating';this.emit()}},allowLoopbackHttp:localHttp});session.provider=provider;await provider.start();
+   const safeFetch=createSafeFetch({signal:controller.signal,allowLoopbackHttp:localHttp,fetchImpl:this.fetchImpl,timeoutMs:this.requestTimeoutMs});
+   const createClient=()=>new Client({name:'zQ',version:'1.0.0'},{jsonSchemaValidator:{getValidator(){throw new ConnectorError('Connector schema validation requires its bounded worker.')}},listMaxPages:16,listChanged:{tools:{autoRefresh:false,debounceMs:0,onChanged:()=>{if(this.sessions.get(id)!==session||row.status!=='connected')return;row.revision++;row.tools.forEach(t=>t.enabled=false);void this.disconnect(id).then(()=>this.commit()).catch(()=>{})}}}});
+   // OAuth redirects unwind connect; finishAuth and reconnect use fresh SDK state.
+   let client=createClient(),transport=new StreamableHTTPClientTransport(new URL(row.url),{authProvider:provider.transportAuth(),fetch:safeFetch,onInsufficientScope:'throw'});Object.assign(session,{client,transport});
+   try{await client.connect(transport,{signal:controller.signal,timeout:this.requestTimeoutMs})}catch(error){if(!provider.redirected)throw error;const params=await provider.callback;controller.signal.throwIfAborted();await provider.finish(params,safeFetch);await client.close();client=createClient();transport=new StreamableHTTPClientTransport(new URL(row.url),{authProvider:provider.transportAuth(),fetch:safeFetch,onInsufficientScope:'throw'});Object.assign(session,{client,transport});await client.connect(transport,{signal:controller.signal,timeout:this.requestTimeoutMs})}
+   provider.interactive=false;provider.stopListener();const listed=await client.listTools(undefined,{signal:controller.signal,timeout:this.requestTimeoutMs});controller.signal.throwIfAborted();
+   const tools=this.normalizeTools(listed.tools,row.tools);
+   if(JSON.stringify(row.tools)!==JSON.stringify(tools))row.revision++;row.tools=tools;row.status='connected';delete row.error;this.commit();return clone(row);
+  }catch(error){const cancelled=controller.signal.aborted;const safe=cancelled?new ConnectorError('Connector connection cancelled.'):safeError(error);await this.cleanup(session);if(this.sessions.get(id)===session){this.sessions.delete(id);row.status=cancelled?'disconnected':'error';if(row.status==='error')row.error=safe.message;this.emit()}throw safe}finally{clearTimeout(timer)}
+ }
+ async cleanup(session){if(session.cleanup)return session.cleanup;session.cleanup=(async()=>{const sessionId=session.transport?.sessionId;session.controller.abort();session.provider?.close();await session.provider?.secrets.queue;await session.client?.close().catch(()=>{});await session.transport?.close().catch(()=>{});
+  if(sessionId&&session.provider){const row=session.provider.row;const cleanupTransport=new StreamableHTTPClientTransport(new URL(row.url),{sessionId,authProvider:{token:async()=>session.provider.savedTokens?.access_token},fetch:createSafeFetch({allowLoopbackHttp:this.allowLoopbackHttp&&new URL(row.url).protocol==='http:',fetchImpl:this.fetchImpl,timeoutMs:1500,maxBytes:16384})});await cleanupTransport.terminateSession().catch(()=>{});await cleanupTransport.close().catch(()=>{})}
+ })();return session.cleanup}
+ async disconnect(id){const row=this.get(id);const session=this.sessions.get(id);this.sessions.delete(id);row.status='disconnected';delete row.error;this.emit();if(session)await this.cleanup(session);return clone(row)}
+ async remove(id){const row=this.get(id);if(this.locks.has(id))throw new ConnectorError('Connector is busy.');this.locks.add(id);try{await this.disconnect(id);const secrets=new SecretStore(this.credentials,id);await secrets.delete('tokens');await secrets.delete('client');this.rows=this.rows.filter(r=>r!==row);this.commit()}finally{this.locks.delete(id)}}
+ async setTools({id,names}){const row=this.get(id);if(busy(row)||this.locks.has(id))throw new ConnectorError('Connector is busy.');if(!Array.isArray(names)||names.length>256||names.some(name=>!row.tools.some(t=>t.name===name)))throw new ConnectorError('Unknown connector tool.');const chosen=new Set(names);let changed=false;for(const tool of row.tools){const enabled=chosen.has(tool.name);if(tool.enabled!==enabled){tool.enabled=enabled;changed=true}}if(changed){row.revision++;this.commit()}return clone(row)}
+ async callTool(id,name,args,{signal,expectedRevision}={}){const row=this.get(id),session=this.sessions.get(id);if(row.status!=='connected'||!session)throw new ConnectorError('Connector is disconnected. Reconnect before using its tools.');if(expectedRevision!==row.revision)throw new ConnectorError('Connector tools changed. Review the current tools and try again.');const tool=row.tools.find(t=>t.name===name);if(!tool?.enabled)throw new ConnectorError('Connector tool is not enabled.');boundedJSON(args,128*1024,'Tool arguments');if(!await validateToolArguments(tool.inputSchema,args,{signal:AbortSignal.any([session.controller.signal,signal].filter(Boolean))}))throw new ConnectorError('Tool arguments do not match the connector schema.');if(this.sessions.get(id)!==session||row.revision!==expectedRevision||!tool.enabled)throw new ConnectorError('Connector tools changed. Review the current tools and try again.');
+  try{const combined=AbortSignal.any([session.controller.signal,signal].filter(Boolean));combined.throwIfAborted();const result=await session.client.callTool({name,arguments:args},{signal:combined,timeout:this.requestTimeoutMs,toolDefinition:{name:tool.name,inputSchema:tool.inputSchema}});if(this.sessions.get(id)!==session||row.revision!==expectedRevision)throw new ConnectorError('Connector changed during the tool request.');boundedJSON(result,2*1024*1024,'Tool result');if(tool.outputSchema&&!result.isError){if(result.structuredContent===undefined||!await validateToolArguments(tool.outputSchema,result.structuredContent,{signal:combined}))throw new ConnectorError('Connector tool output does not match its declared schema.')}if(this.sessions.get(id)!==session||row.revision!==expectedRevision)throw new ConnectorError('Connector changed during the tool request.');return result}catch(error){const safe=session.controller.signal.aborted||signal?.aborted?new ConnectorError('Connector request cancelled or disconnected.'):safeError(error);if(error instanceof UnauthorizedError||/expired|authorization/.test(safe.message)){if(this.sessions.get(id)===session){await this.disconnect(id);row.status='error';row.error=safe.message;this.emit()}}throw safe}
+ }
+ async close(){if(this.closed)return;this.closed=true;const sessions=[...this.sessions.values()];this.sessions.clear();await Promise.all(sessions.map(s=>this.cleanup(s)))}
+}
+module.exports={ConnectorService};

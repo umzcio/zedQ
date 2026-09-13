@@ -7,7 +7,7 @@ import VoiceSettings from './VoiceSettings'
 import './settings.css'
 
 const palettes=['green','blue','red','gunmetal'] as const
-export default function Settings({section,theme,palette,setTheme,setPalette,closing,settingsRef,skillsSettingsRef}:{section:SettingsSection;theme:WorkspaceState['theme'];palette:WorkspaceState['palette'];setTheme:(theme:WorkspaceState['theme'])=>void;setPalette:(palette:WorkspaceState['palette'])=>void;closing:boolean;settingsRef:Ref<HTMLDivElement>;skillsSettingsRef?:Ref<HTMLDivElement>}){
+export default function Settings({section,theme,palette,setTheme,setPalette,closing,settingsRef,skillsSettingsRef,connectorsSettingsRef}:{section:SettingsSection;theme:WorkspaceState['theme'];palette:WorkspaceState['palette'];setTheme:(theme:WorkspaceState['theme'])=>void;setPalette:(palette:WorkspaceState['palette'])=>void;closing:boolean;settingsRef:Ref<HTMLDivElement>;skillsSettingsRef?:Ref<HTMLDivElement>;connectorsSettingsRef?:Ref<HTMLDivElement>}){
  const page=useRef<HTMLDivElement>(null)
  useLayoutEffect(()=>{page.current?.closest('main')?.scrollTo({top:0})},[section])
  return <div className={`settings-page${section==='appearance'?' settings-page-appearance':''}`} ref={page}>
@@ -35,6 +35,7 @@ export default function Settings({section,theme,palette,setTheme,setPalette,clos
    </section>
   </div>
   <div className="settings-panel" hidden={section!=='connections'} inert={section!=='connections'||closing}><div ref={settingsRef}/></div>
+  <div className="settings-panel" hidden={section!=='connectors'} inert={section!=='connectors'||closing}><div ref={connectorsSettingsRef}/></div>
   <div className="settings-panel" hidden={section!=='skills'} inert={section!=='skills'||closing}><div ref={skillsSettingsRef}/></div>
   <div className="settings-panel" hidden={section!=='modules'} inert={section!=='modules'||closing}><ModuleSettings closing={closing}/></div>
   <div className="settings-panel" hidden={section!=='voice'} inert={section!=='voice'||closing}><VoiceSettings active={section==='voice'} closing={closing}/></div>

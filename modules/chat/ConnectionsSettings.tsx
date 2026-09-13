@@ -53,7 +53,7 @@ export default function ConnectionsSettings({ chat, closing }: { chat: ChatContr
   finally { pending.current = false; setBusy('') }
  }
  return <section id="model-connections" className="connections-settings">
-  <div className="connection-settings-heading settings-panel-header"><div><h2>Connections</h2><p>Connect your providers and choose the models you want in Chat.</p></div><Button tooltip="Connect a model provider and choose its models for Chat" ref={addButton} variant="outline" disabled={disabled} onClick={() => open()}><Plus size={15}/>Add provider</Button></div>
+  <div className="connection-settings-heading settings-panel-header"><div><h2>AI providers</h2><p>Connect your providers and choose the models you want in Chat.</p></div><Button tooltip="Connect a model provider and choose its models for Chat" ref={addButton} variant="outline" disabled={disabled} onClick={() => open()}><Plus size={15}/>Add provider</Button></div>
   {stateError && <p className="chat-error" role="alert">{stateError}</p>}
   {chat.loading ? <p role="status">Loading connections…</p> : !chat.state.connections.length && !stateError ? <p className="connection-empty">No connections yet. Add a provider to start chatting.</p> : null}
   <div className="connection-list">

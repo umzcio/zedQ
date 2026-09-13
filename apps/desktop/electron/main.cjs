@@ -10,7 +10,7 @@ const { CloseRequests } = require('./close-requests.cjs');
 const closeRequests = new CloseRequests();
 app.setName('zQ');
 if (process.env.ZQ_DATA_DIR) app.setPath('userData', path.resolve(process.env.ZQ_DATA_DIR));
-let window, workspace, files, chat, voice, attachments, chatError, quitting = false, closeTimer;
+let window, workspace, files, chat, voice, connectors, attachments, chatError, connectorError, quitting = false, closeTimer;
 const index = path.resolve(__dirname, '../dist/index.html');
 const allowedURL = pathToFileURL(index).href;
 const runtimeCheck = process.argv.includes('--runtime-check');
@@ -31,9 +31,10 @@ async function closeFailed(id, message) {
  if (!window || window.isDestroyed()) return;
  const { response } = await dialog.showMessageBox(window, { type: 'warning', message: 'Your latest changes could not be saved.', detail: message, buttons: ['Keep zQ open', 'Quit without saving'], defaultId: 0, cancelId: 0, noLink: true });
  if (response === 1) { window.destroy(); app.exit(0); }
- else { quitting = false; closeRequests.cancel(id); window?.webContents.send('window:close-cancelled', id); }
+ else { quitting = false; chat?.resumeAfterWindowClose(); closeRequests.cancel(id); window?.webContents.send('window:close-cancelled', id); }
 }
 function createWindow() {
+ chat?.resumeAfterWindowClose();
  window = new BrowserWindow({ width: 1380, height: 900, minWidth: 840, minHeight: 640, title: 'zQ', backgroundColor: '#ffffff', show: false,
   ...(process.platform==='darwin'?{titleBarStyle:'hidden',trafficLightPosition:{x:18,y:24}}:{}),
   webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, spellcheck: false } });
@@ -77,7 +78,11 @@ app.whenReady().then(async () => {
  const renderDocument=require('./document-helper.cjs').createDocumentRenderer({helperPath:app.isPackaged?path.join(process.resourcesPath,'native','DocumentHelper.app','Contents','MacOS','DocumentHelperLauncher'):path.join(__dirname,'../native/bin/DocumentHelper.app/Contents/MacOS/DocumentHelperLauncher')});
  let artifacts,artifactError,artifactWarning='';try{artifacts=new (require('./artifact-service.cjs').ArtifactService)({directory,render:renderDocument,onChange:items=>{if(window&&!window.isDestroyed())window.webContents.send('artifacts:changed',items)}})}catch(e){artifactError=e}
  const artifactService=()=>{if(!artifacts)throw artifactError;return artifacts};
- try { chat = new (require('./chat-service.cjs').ChatService)({directory, artifacts, credentials:require('./provider-keychain.cjs').createCredentialStore({directory,helperPath:app.isPackaged?path.join(process.resourcesPath,'native','provider-keychain'):undefined}), attachments, getNotes:()=>workspace.load()?.notes??[], onChange:state=>{if(window&&!window.isDestroyed())window.webContents.send('chat:changed',state)}}); } catch(error) { chatError=error; }
+ const credentials=require('./provider-keychain.cjs').createCredentialStore({directory,helperPath:app.isPackaged?path.join(process.resourcesPath,'native','provider-keychain'):undefined});
+ try { connectors=new (require('./mcp/service.cjs').ConnectorService)({directory,credentials,allowLoopbackHttp:true,openExternal:url=>shell.openExternal(url),onChange:rows=>{if(window&&!window.isDestroyed())window.webContents.send('connectors:changed',rows)}}); } catch(error) { connectorError=error; }
+ handle('connectors:list',()=>{if(connectorError)throw connectorError;return connectors.list()});
+ for(const method of ['save','connect','disconnect','remove','setTools'])handle(`connectors:${method}`,async input=>{if(connectorError)throw connectorError;await connectors[method](input);return connectors.list()});
+ try { chat = new (require('./chat-service.cjs').ChatService)({directory, artifacts, credentials, connectors, attachments, getNotes:()=>workspace.load()?.notes??[], onChange:state=>{if(window&&!window.isDestroyed())window.webContents.send('chat:changed',state)}}); } catch(error) { chatError=error; }
  if(chat)void chat.connections.cleanup();
  voice=new (require('./voice-service.cjs').VoiceService)({directory,listConnections:()=>chat?.state.connections??[],resolveCredential:connection=>{if(!chat?.connections.isCurrent(connection))throw Error('The transcription connection changed. Record again.');return chat.connections.credentials.get(connection.credentialRef)},helperPath:app.isPackaged?path.join(process.resourcesPath,'native','voice-transcribe'):path.join(__dirname,'../native/bin/voice-transcribe')});
  for(const method of ['load','save','availability','begin','transcribe','cancel'])handle(`voice:${method}`,input=>voice[method](input));
@@ -88,7 +93,7 @@ app.whenReady().then(async () => {
  for(const method of ['create','update','version','preview','document'])handle(`artifacts:${method}`,input=>artifactService()[method](input));
  handle('artifacts:importGenerated',input=>{const c=chatService().conversation(input.conversationId);const m=require('./chat-lifecycle.cjs').allMessages(c).find(m=>m.id===input.messageId&&(m.generatedFiles??[]).some(f=>f.id===input.fileId));if(!m)throw Error('Generated file not found.');return artifactService().importFile(chatService().generatedFile(input),{conversationId:c.id,messageId:m.id,versionId:require('./chat-lifecycle.cjs').versionId(m),conversationTitle:c.title,generatedFileId:input.fileId})});
  handle('artifacts:save',async input=>{const file=artifactService().file(input);const result=await dialog.showSaveDialog(window,{title:'Download artifact',defaultPath:file.name,properties:['showOverwriteConfirmation']});if(result.canceled||!result.filePath)return false;fs.writeFileSync(result.filePath,Buffer.from(file.data,'base64'),{mode:0o600});return true});
- for(const method of ['enqueueMessage','updateQueuedMessage','setQueuePaused','respondToInteraction','setApprovalMode','previewSkillResource','importSkill','saveSkill','duplicateSkill','deleteSkill','addSkillFiles','removeSkillFile','searchProjectFiles','searchConversations','inspectContext','reviseMessage','branchConversation','selectMessageVersion','updateConversation','updateProject','saveDraft','saveChatView','previewGeneratedFile','reuseGeneratedFile','generatedFileToProject','saveConnection','saveModelPreferences','deleteConnection','createConversation','configureConversation','renameConversation','deleteConversation','saveProject','deleteProject','moveConversation','addProjectFiles','removeProjectFile','models','testConnection','stop'])handle(`chat:${method}`, input=>chatService()[method](input));
+ for(const method of ['setConversationConnectors','enqueueMessage','updateQueuedMessage','setQueuePaused','respondToInteraction','setApprovalMode','previewSkillResource','importSkill','saveSkill','duplicateSkill','deleteSkill','addSkillFiles','removeSkillFile','searchProjectFiles','searchConversations','inspectContext','reviseMessage','branchConversation','selectMessageVersion','updateConversation','updateProject','saveDraft','saveChatView','previewGeneratedFile','reuseGeneratedFile','generatedFileToProject','saveConnection','saveModelPreferences','deleteConnection','createConversation','configureConversation','renameConversation','deleteConversation','saveProject','deleteProject','moveConversation','addProjectFiles','removeProjectFile','models','testConnection','stop'])handle(`chat:${method}`, input=>chatService()[method](input));
  async function saveText({name,text}){if(!require('./chat-store.cjs').text(name,512)||!require('./chat-store.cjs').text(text,32*1024*1024))throw Error('Invalid text file.');const result=await dialog.showSaveDialog(window,{title:'Save text file',defaultPath:path.basename(name),properties:['showOverwriteConfirmation']});if(result.canceled||!result.filePath)return false;fs.writeFileSync(result.filePath,text,{mode:0o600});return true}
  handle('chat:saveTextFile',saveText);
  const skillCatalog=new (require('./skill-catalog.cjs').SkillCatalog)();
@@ -139,10 +144,11 @@ app.whenReady().then(async () => {
   const result = await dialog.showMessageBox(window, { type: 'question', message: 'Reload this file from disk?', detail: 'This replaces the current recovery draft with the file on disk.', buttons: ['Cancel', 'Reload'], defaultId: 0, cancelId: 0 });
   return result.response === 1 ? files.reload(id) : null;
  });
- ipcMain.on('window:close-ready', (event, id, error) => {
+ ipcMain.on('window:close-ready', async (event, id, error) => {
   if (!trusted(event)||closeRequests.active?.id!==id||closeRequests.active.phase!=='waiting') return;
   if (typeof error === 'string') { closeFailed(id, error); return; }
-  try { voice?.close(); chat?.shutdown(); } catch(error) { closeFailed(id,error.message); return; }
+  clearTimeout(closeTimer);
+  try { voice?.close(); chat?.shutdown(); if(connectors)await Promise.all(connectors.list().map(row=>connectors.disconnect(row.id))); } catch(error) { closeFailed(id,error.message); return; }
   if (!closeRequests.complete(id)) return;
   clearTimeout(closeTimer);
   const shouldQuit = quitting;

@@ -8,7 +8,7 @@ function selectedTools(value=[]){
  if(!Array.isArray(value)||value.length>3||new Set(value).size!==value.length||!value.every(v=>KINDS.includes(v)))throw Error('Choose valid, unique provider tools.');
  return [...value];
 }
-function validActivity(v){return object(v)&&bounded(v.id,256)&&!!v.id&&[...KINDS,'create_document'].includes(v.kind)&&['running','complete','error','stopped','interrupted'].includes(v.status)&&(v.detail===undefined||bounded(v.detail,4000))&&Object.keys(v).every(k=>['id','kind','status','detail'].includes(k))}
+function validActivity(v){return object(v)&&bounded(v.id,256)&&!!v.id&&[...KINDS,'create_document','mcp'].includes(v.kind)&&['running','complete','error','stopped','interrupted'].includes(v.status)&&(v.detail===undefined||bounded(v.detail,4000))&&Object.keys(v).every(k=>['id','kind','status','detail'].includes(k))}
 function validFile(v){return object(v)&&bounded(v.id,256)&&!!v.id&&bounded(v.name,256)&&!!v.name&&!/[\\/\x00-\x1f\x7f]/.test(v.name)&&bounded(v.mime,128)&&/^[\w.+-]+\/[\w.+-]+$/.test(v.mime)&&Number.isInteger(v.size)&&v.size>=0&&v.size<=FILE_LIMIT&&typeof v.data==='string'&&v.data.length<=Math.ceil(FILE_LIMIT/3)*4&&Buffer.from(v.data,'base64').toString('base64')===v.data&&Buffer.byteLength(v.data,'base64')===v.size&&Object.keys(v).every(k=>['id','name','mime','size','data'].includes(k))}
 function validSources(s){return Array.isArray(s)&&s.length<=100&&new Set(s.map(v=>v.id)).size===s.length&&s.every(v=>object(v)&&bounded(v.id,128)&&!!v.id&&bounded(v.title,1024)&&bounded(v.url,8192)&&(()=>{try{return externalURL(v.url)===v.url}catch{return false}})())}
 function recordSources(reply,sources){if(!validSources(sources))throw Error("The provider returned invalid web sources.");reply.sources=structuredClone(sources)}
@@ -27,7 +27,7 @@ function recordActivity(reply,event,allowed){
  reply.toolActivity=list;
 }
 function recordArtifact(reply,input,allowed){
- if(!allowed.some(k=>['code_execution','create_document'].includes(k))||!object(input))throw Error('The provider returned an unrequested generated file.');
+ if(!allowed.some(k=>['code_execution','create_document','mcp'].includes(k))||!object(input))throw Error('The provider returned an unrequested generated file.');
  const name=typeof input.name==='string'?input.name.split(/[\\/]/).at(-1).replace(/[\x00-\x1f\x7f]/g,'').replace(/^\.+/,''):'';
  const file={id:randomUUID(),name,mime:input.mime,size:typeof input.data==='string'?Buffer.byteLength(input.data,'base64'):-1,data:input.data};
  if(!validFile(file))throw Error('The generated file is invalid or exceeds 4 MB.');

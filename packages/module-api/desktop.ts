@@ -1,3 +1,4 @@
+import type {ConnectorBridge} from './connector-types'
 import type {ArtifactBridge} from './artifact-types'
 import type {VoiceBridge} from './voice-types'
 import type { ChatBridge, AttachmentBridge } from './chat-types'
@@ -15,6 +16,7 @@ export type DesktopBridge = {
  modules:{runtime:()=>Promise<Result<ModuleRuntime[]>>;list:()=>Promise<Result<ModuleStatus[]>>;install:()=>Promise<Result<ModuleStatus|null>>;download:(url:string)=>Promise<Result<ModuleStatus>>;rollback:(id:string)=>Promise<Result<ModuleStatus>>;recover:(id:string,version:string)=>Promise<Result<ModuleRuntime>>};
  attachments:AttachmentBridge;
  chat:ChatBridge;
+ connectors:ConnectorBridge;
  voice:VoiceBridge;
  artifacts:ArtifactBridge;
  workspace:{load:()=>Promise<Result<WorkspaceState|null>>;save:(state:WorkspaceState)=>Promise<Result<null>>};

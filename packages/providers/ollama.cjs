@@ -170,9 +170,9 @@ function createOllamaProvider({ fetchImpl = globalThis.fetch, idleMs = 90000, to
         (message.images===undefined || message.role==='user'&&Array.isArray(message.images)&&message.images.length<=10&&message.images.every(image=>typeof image==='string'&&image.length<=1398104&&image.length%4===0&&/^[A-Za-z0-9+/]+={0,2}$/.test(image)))) || typeof onDelta !== 'function') {
       throw failure('INVALID_REQUEST', 'Ollama chat requires a model and text messages.');
     }
-    if (localTools !== undefined && (!Array.isArray(localTools) || localTools.length > 16 || !localTools.every(tool =>
+    if (localTools !== undefined && (!Array.isArray(localTools) || localTools.length > 64 || !localTools.every(tool =>
       object(tool) && typeof tool.name === 'string' && /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/.test(tool.name) &&
-      typeof tool.description === 'string' && Buffer.byteLength(tool.description, 'utf8') <= 2048 &&
+      typeof tool.description === 'string' && tool.description.length <= 8000 &&
       object(tool.parameters) && tool.parameters.type === 'object') || new Set(localTools.map(tool => tool.name)).size !== localTools.length)) {
       throw failure('INVALID_REQUEST', 'Ollama requires valid, uniquely named local tools.');
     }

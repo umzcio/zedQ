@@ -1,3 +1,4 @@
+const {validConnectorIds}=require('./chat-connectors.cjs');
 const {validCatalog,validUsage}=require('./skill-activation.cjs');
 'use strict';
 const fs=require('node:fs'),path=require('node:path');
@@ -28,7 +29,7 @@ function valid(state){
  const projects=state.projects??[];
  if(!Array.isArray(projects)||projects.length>100||!unique(projects))return false;
  const projectContext=p=>obj(p)&&id(p.id)&&text(p.name,256)&&p.name.trim()&&text(p.instructions,16000)&&Array.isArray(p.files)&&p.files.length<=10&&p.files.every(isAttachment)&&(p.icon===undefined||appearance.icons.includes(p.icon))&&(p.color===undefined||appearance.colors.some(c=>c.id===p.color));
- if(!projects.every(p=>projectContext(p)&&validSkillIds(p.skillIds)&&optionalFlag(p.pinned)&&choice(p.defaultModel)&&toolList(p.defaultTools)))return false;
+ if(!projects.every(p=>projectContext(p)&&validConnectorIds(p.connectorIds)&&validSkillIds(p.skillIds)&&optionalFlag(p.pinned)&&choice(p.defaultModel)&&toolList(p.defaultTools)))return false;
  if(state.pendingCredentialDeletes!==undefined&&(!Array.isArray(state.pendingCredentialDeletes)||state.pendingCredentialDeletes.length>200||!state.pendingCredentialDeletes.every(id)||new Set(state.pendingCredentialDeletes).size!==state.pendingCredentialDeletes.length))return false;
  for(const c of state.connections){if(!obj(c)||!id(c.id)||!text(c.name,256)||!c.name.trim()||!['ollama','vllm','openai','anthropic','google','xai','perplexity','openrouter','groq','bedrock'].includes(c.provider)||!text(c.baseUrl,2048))return false;if(Object.keys(c).some(k=>!['id','name','provider','baseUrl','credentialRef','updatedAt','enabledModels','favoriteModels','modelLabels'].includes(k))||(c.credentialRef!==undefined&&!id(c.credentialRef))||(c.updatedAt!==undefined&&!stamp(c.updatedAt)))return false;try{const normalized=require('@zq/providers').normalizeConnection(c);if(!['ollama','vllm'].includes(c.provider)&&normalized.baseUrl!==c.baseUrl||normalized.provider!==c.provider)return false;const u=new URL(c.baseUrl);if(!['http:','https:'].includes(u.protocol)||u.username||u.password||u.search||u.hash)return false}catch{return false}}
  for(const c of state.connections){
@@ -40,7 +41,7 @@ function valid(state){
  for(const c of state.conversations){
   if(!obj(c)||!id(c.id)||!text(c.title)||!(c.connectionId===null||state.connections.some(x=>x.id===c.connectionId))||!text(c.model,512)||!stamp(c.createdAt)||!stamp(c.updatedAt)||!Array.isArray(c.messages)||c.messages.length>1000||!unique(c.messages))return false;
   if(c.projectId!=null&&!projects.some(p=>p.id===c.projectId))return false;
-  if(!validSkillIds(c.skillIds,{nullable:true})||!optionalFlag(c.pinned)||!optionalStamp(c.archivedAt)||!optionalStamp(c.deletedAt))return false;
+  if(!validConnectorIds(c.connectorIds,{nullable:true})||!validSkillIds(c.skillIds,{nullable:true})||!optionalFlag(c.pinned)||!optionalStamp(c.archivedAt)||!optionalStamp(c.deletedAt))return false;
   if(!validQueue(c.queue))return false;
   if(c.approvalMode!==undefined&&!['auto','ask'].includes(c.approvalMode))return false;
   if(c.branches!==undefined&&(!Array.isArray(c.branches)||c.branches.length>200||!unique(c.branches)||!c.branches.every(b=>obj(b)&&id(b.id)&&id(b.anchorId)&&Array.isArray(b.messages)&&b.messages.length>0&&b.messages.length<=1000&&unique(b.messages)&&b.messages[0].id===b.anchorId&&(b.messages[0].versionId??b.messages[0].id)===b.id)))return false;
@@ -50,14 +51,14 @@ function valid(state){
    if(!obj(m)||!id(m.id)||!['user','assistant'].includes(m.role)||!text(m.content,2*1024*1024)||!text(m.thinking,2*1024*1024)||!['complete','streaming','stopped','error','interrupted'].includes(m.status)||!stamp(m.createdAt)||!text(m.error)||!Array.isArray(m.context)||m.context.length>10)return false;
    if(m.versionId!==undefined&&!id(m.versionId)||m.model!==undefined&&!text(m.model,512)||m.connectionId!==undefined&&!id(m.connectionId)||m.connectionName!==undefined&&!text(m.connectionName,256)||!optionalStamp(m.finishedAt))return false;
    if(m.reportedModel!==undefined&&!text(m.reportedModel,512)||m.usage!==undefined&&(!obj(m.usage)||!Object.entries(m.usage).every(([k,v])=>['inputTokens','outputTokens','cachedInputTokens','reasoningTokens'].includes(k)&&Number.isSafeInteger(v)&&v>=0)))return false;
-   if(!validCatalog(m.skillCatalog)||!validUsage(m.skillUsage)||!validToolMessage(m)||!validInteractions(m.interactions)||m.skillContext!==undefined&&!validSkills(m.skillContext,{max:10}))return false;
+   if(!validConnectorIds(m.connectorIds)||!validCatalog(m.skillCatalog)||!validUsage(m.skillUsage)||!validToolMessage(m)||!validInteractions(m.interactions)||m.skillContext!==undefined&&!validSkills(m.skillContext,{max:10}))return false;
    if(m.artifactContext!==undefined&&(!obj(m.artifactContext)||Object.keys(m.artifactContext).some(k=>!['artifactId','versionId'].includes(k))||![m.artifactContext.artifactId,m.artifactContext.versionId].every(v=>typeof v==='string'&&/^[a-f0-9-]{36}$/.test(v))))return false;
    if(m.projectContext!==undefined&&!projectContext(m.projectContext))return false;
    if(m.attachments!==undefined&&(!Array.isArray(m.attachments)||m.attachments.length>10||!m.attachments.every(isAttachment)))return false;
    if(!m.context.every(n=>obj(n)&&id(n.id)&&text(n.title)&&text(n.body,100000)))return false;
   }
  }
- if(state.drafts!==undefined&&(!obj(state.drafts)||Object.keys(state.drafts).length>2100||!Object.entries(state.drafts).every(([key,d])=>id(key)&&obj(d)&&validSkillIds(d.skillIds,{nullable:true})&&text(d.text,64000)&&Array.isArray(d.noteIds)&&d.noteIds.length<=10&&d.noteIds.every(id)&&toolList(d.tools)&&Array.isArray(d.attachments)&&d.attachments.length+d.noteIds.length<=10&&d.attachments.every(isAttachment))))return false;
+ if(state.drafts!==undefined&&(!obj(state.drafts)||Object.keys(state.drafts).length>2100||!Object.entries(state.drafts).every(([key,d])=>id(key)&&obj(d)&&validConnectorIds(d.connectorIds,{nullable:true})&&validSkillIds(d.skillIds,{nullable:true})&&text(d.text,64000)&&Array.isArray(d.noteIds)&&d.noteIds.length<=10&&d.noteIds.every(id)&&toolList(d.tools)&&Array.isArray(d.attachments)&&d.attachments.length+d.noteIds.length<=10&&d.attachments.every(isAttachment))))return false;
  if(state.chatView!==undefined){const v=state.chatView;if(!obj(v)||!text(v.selected,256)||!(v.projectId===null||id(v.projectId))||typeof v.projectHome!=='boolean'||!obj(v.positions)||Object.keys(v.positions).length>2000||!Object.entries(v.positions).every(([key,p])=>id(key)&&stamp(p)))return false}
  return true;
 }

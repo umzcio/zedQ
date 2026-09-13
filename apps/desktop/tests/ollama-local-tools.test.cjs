@@ -203,3 +203,9 @@ test('capability failures are rejected and never cached', async () => {
     assert.equal(requests, 2);
   }
 });
+test('MCP selections can advertise more than sixteen tools with full descriptions',async()=>{
+ const tools=Array.from({length:20},(_,i)=>({name:'mcp_'+i,description:i===0?'Research '.repeat(500):'Lookup',parameters:{type:'object'}}));let body;
+ const p=createOllamaProvider({fetchImpl:async(_url,options)=>{body=JSON.parse(options.body);return response([done])}});
+ await p.streamChat(request({localTools:tools}));assert.equal(body.tools.length,20);assert.equal(body.tools[0].function.description,tools[0].description);
+ await assert.rejects(p.streamChat(request({localTools:Array.from({length:65},(_,i)=>({...tools[1],name:'mcp_'+i}))})),{code:'INVALID_REQUEST'});
+});

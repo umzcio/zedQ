@@ -3,6 +3,7 @@ import { useHost } from '@zq/module-api'
 import { useEffect, useRef, useState } from 'react'
 import { Plus, GearSix, Trash, ArrowLeft, UploadSimple, MagnifyingGlass, PushPin } from '@phosphor-icons/react'
 import { ProjectContextMenu, ProjectIconPicker } from './ProjectActions'
+import ConnectorPicker from './ConnectorPicker'
 import SkillPicker from './SkillPicker'
 import { ProjectIcon } from './ProjectIcon'
 import { ChatContextMenu, ChatActionDialog, type ChatAction } from './ChatActions'
@@ -48,6 +49,7 @@ export function ChatProjectView({chat,closing}:{chat:ChatController;closing:bool
    </section>
   </div>
   <section className="project-conversations"><header><h2>Skills</h2><SkillPicker skills={chat.state.skills??[]} selected={project.skillIds??null} inherited={[]} allowInherit={false} disabled={busy||closing} onManage={()=>openSettings?.('skills')} onChange={ids=>{if(lock.current)return;lock.current=true;setBusy(true);setError('');void chat.updateProject({id:project.id,skillIds:ids??[]}).catch(e=>setError(e.message)).finally(()=>{lock.current=false;setBusy(false)})}}/></header><p>{project.skillIds===undefined?'Relevant installed skills are selected automatically. Choose specific skills to limit selection, or No skills to turn them off.':'Chats inherit this skill selection. Each chat can choose its own selection.'}</p></section>
+  <section className="project-conversations"><header><h2>Connectors</h2><ConnectorPicker connectors={chat.connectors} selected={project.connectorIds??[]} disabled={busy||closing||chat.connectorsLoading} onManage={()=>openSettings?.('connectors')} onChange={ids=>{if(lock.current)return;lock.current=true;setBusy(true);setError('');void chat.updateProject({id:project.id,connectorIds:ids??[]}).catch(e=>setError(e.message)).finally(()=>{lock.current=false;setBusy(false)})}}/></header><p>Chats inherit these connectors. Each chat can choose its own selection.</p></section>
   <section className="project-conversations"><header><h2>Conversations</h2><Button tooltip="Start a chat using this project’s instructions and files" variant="ghost" onClick={()=>void chat.create()} disabled={closing||busy}><Plus size={16}/>New chat</Button></header>
    {pinnedFirst(chat.scopedConversations).map(c=><ChatContextMenu chat={chat} key={c.id} conversation={c} disabled={closing||busy} deleteDisabled={!!chat.fileBusy[c.id]||c.messages.some(m=>m.status==='streaming')} onOpen={chat.select} onAction={setAction}><TooltipButton tooltip={`Open ${c.title}. Right-click for chat actions.`} className="project-conversation" onClick={()=>chat.select(c.id)} onKeyDown={e=>{if(e.key==='F2'){e.preventDefault();setAction({kind:'rename',conversation:c})}}}><span>{c.title}{c.pinned&&<PushPin size={11} className="chat-pin-indicator"/>}</span><span>{new Date(c.updatedAt).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</span></TooltipButton></ChatContextMenu>)}
    {!chat.scopedConversations.length&&<p>Start a chat. Your project’s files and instructions will be included automatically.</p>}

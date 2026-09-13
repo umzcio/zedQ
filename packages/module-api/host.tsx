@@ -12,18 +12,18 @@ export type Commands = {
  'tasks.new':Partial<Task>|undefined; 'tasks.edit':Task; 'tasks.move':{id:string;status:Status}; 'tasks.show':{project:string;scope:string};
 }
 export type CommandBus = {run:<K extends keyof Commands>(name:K,payload:Commands[K])=>boolean;register:<K extends keyof Commands>(name:K,handler:(payload:Commands[K])=>void)=>()=>void}
-export type SettingsSection='appearance'|'connections'|'skills'|'voice'|'modules'
+export type SettingsSection='appearance'|'connections'|'skills'|'connectors'|'voice'|'modules'
 export type Host = {
  manifest:ModuleManifest;
  workspace:WorkspaceState;setWorkspace:Dispatch<SetStateAction<WorkspaceState>>;
  registerFlush:(id:string,flush:()=>Promise<void>)=>()=>void;
  closing:boolean;saveStatus:string;initialFiles:FileDocument[];
  onFilesChange:(files:FileDocument[])=>void;onFileFlush:(flush:()=>Promise<void>)=>void;flushWorkspace:()=>Promise<void>;
- services:Pick<DesktopBridge,'chat'|'attachments'|'files'|'voice'|'artifacts'|'clipboard'>;
+ services:Pick<DesktopBridge,'chat'|'connectors'|'attachments'|'files'|'voice'|'artifacts'|'clipboard'>;
  openSettings?:(section:SettingsSection)=>void;
  commands:CommandBus;navigate:(view:View)=>void;notify:(message:string)=>void;
  focusMode:boolean;setFocusMode:Dispatch<SetStateAction<boolean>>;
- targets:{view:HTMLElement|null;sidebar:HTMLElement|null;settings:HTMLElement|null;skillsSettings?:HTMLElement|null};
+ targets:{view:HTMLElement|null;sidebar:HTMLElement|null;settings:HTMLElement|null;skillsSettings?:HTMLElement|null;connectorsSettings?:HTMLElement|null};
 }
 const HostContext=createContext<Host|null>(null)
 export const ModuleHostProvider=HostContext.Provider
@@ -41,8 +41,8 @@ export function useWorkspaceField<K extends keyof WorkspaceState>(key:K):[Worksp
  },[setWorkspace,key,writable])
  return [workspace[key],set]
 }
-export function ModuleSurface({slot='view',children}:{slot?:'view'|'sidebar'|'settings'|'skillsSettings';children:ReactNode}){
- const {targets,workspace,manifest}=useHost();const visible=(slot==='settings'||slot==='skillsSettings')?workspace.layout.view==='Settings':workspace.layout.view===manifest.view
+export function ModuleSurface({slot='view',children}:{slot?:'view'|'sidebar'|'settings'|'skillsSettings'|'connectorsSettings';children:ReactNode}){
+ const {targets,workspace,manifest}=useHost();const visible=(slot==='settings'||slot==='skillsSettings'||slot==='connectorsSettings')?workspace.layout.view==='Settings':workspace.layout.view===manifest.view
  return visible&&targets[slot]?createPortal(slot==='sidebar'?<IconContext.Provider value={{weight:'light'}}>{children}</IconContext.Provider>:children,targets[slot]!):null
 }
 export function useLayoutField<K extends keyof WorkspaceState['layout']>(key:K){

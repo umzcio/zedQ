@@ -16,7 +16,7 @@ function createToolSession(localTools=[],onLocalTool,check=()=>{},{signal,totalM
   signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
   promise.then(value=>finish(null,value),error=>finish(error));
  });
- if(!Array.isArray(localTools)||localTools.length>16||!localTools.every(t=>object(t)&&typeof t.name==='string'&&/^[a-zA-Z0-9_-]{1,64}$/.test(t.name)&&typeof t.description==='string'&&t.description.length<=8000&&object(t.parameters)&&t.parameters.type==='object')||new Set(localTools.map(t=>t.name)).size!==localTools.length)throw fail('INVALID_REQUEST','Provide valid local function definitions.');
+ if(!Array.isArray(localTools)||localTools.length>64||!localTools.every(t=>object(t)&&typeof t.name==='string'&&/^[a-zA-Z0-9_-]{1,64}$/.test(t.name)&&typeof t.description==='string'&&t.description.length<=8000&&object(t.parameters)&&t.parameters.type==='object')||new Set(localTools.map(t=>t.name)).size!==localTools.length)throw fail('INVALID_REQUEST','Provide valid local function definitions.');
  const definitions=JSON.parse(encode(localTools)),allowed=new Set(definitions.map(t=>t.name));
  if(definitions.length&&typeof onLocalTool!=='function')throw fail('INVALID_REQUEST','Local tools require an execution callback.');
  const calls=new Map();

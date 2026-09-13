@@ -79,3 +79,10 @@ test('closing never fills a newly freed global run slot from another chat queue'
 test('branching copies completed history without duplicating queued work',async t=>{
  const f=await fixture(t),{chat,conversation:c}=f;await chat.sendMessage({conversationId:c.id,text:'Original'});await settle(()=>f.requests.length===1);f.pending[0].resolve();await settle(()=>!chat.runs.size);chat.setQueuePaused({conversationId:c.id,paused:true});chat.enqueueMessage({conversationId:c.id,text:'Only for original'});const branch=chat.branchConversation({conversationId:c.id,messageId:chat.conversation(c.id).messages[0].id});assert.equal(branch.queue?.items.length??0,0);assert.equal(chat.conversation(c.id).queue.items.length,1);assert.equal(branch.messages[0].content,'Original');
 });
+test('reopening a macOS window resumes chat without automatically starting its old queue',async t=>{
+ const f=await fixture(t),{chat,conversation:c}=f;
+ chat.setQueuePaused({conversationId:c.id,paused:true});chat.enqueueMessage({conversationId:c.id,text:'Later'});
+ chat.shutdown();chat.resumeAfterWindowClose();assert.equal(chat.shuttingDown,false);assert.equal(chat.conversation(c.id).queue.paused,true);
+ chat.enqueueMessage({conversationId:c.id,text:'New queue item'});assert.equal(chat.conversation(c.id).queue.items.length,2);assert.equal(f.requests.length,0);
+ const other=chat.createConversation({connectionId:f.connection.id,model:'fixture'});await chat.sendMessage({conversationId:other.id,text:'After reopening'});await settle(()=>f.requests.length===1);f.pending[0].resolve();await settle(()=>!chat.runs.size);
+});

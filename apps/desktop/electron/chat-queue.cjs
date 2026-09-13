@@ -1,4 +1,5 @@
 'use strict';
+const {selectedConnectors}=require('./chat-connectors.cjs');
 const {randomUUID}=require('node:crypto');
 const {selectedTools}=require('./chat-tools.cjs');
 const {validateHostedTools}=require('@zq/providers');
@@ -24,15 +25,15 @@ function validatePrompt(host,conversation,item){
 const methods={
  enqueueMessage(input={}){
   if(this.shuttingDown)throw Error('The app is closing. Reopen it before queueing messages.');
-  const {conversationId,text:content,noteIds=[],attachmentIds=[],tools:requestedTools=[],skillIds,artifactContext}=input;
+  const {conversationId,text:content,noteIds=[],attachmentIds=[],tools:requestedTools=[],skillIds,artifactContext,connectorIds}=input;
   if(!text(content,64000)||!Array.isArray(noteIds)||noteIds.length>10||!noteIds.every(id=>text(id,256)&&id))throw Error('Enter a message up to 64 KB and select at most ten notes.');
   const conversation=this.conversation(conversationId);if(conversation.deletedAt||conversation.archivedAt)throw Error('Restore this chat before queueing messages.');
   const connection=this.state.connections.find(connection=>connection.id===conversation.connectionId);if(!connection||!text(conversation.model,512)||!conversation.model.trim())throw Error('Choose a connection and model first.');this.connections.assertAvailable(connection.id);
   const tools=selectedTools(requestedTools);validateHostedTools(connection.provider,conversation.model,tools);
   const attachments=this.attachments.resolve(attachmentIds),notes=this.getNotes(),context=[...new Set(noteIds)].map(id=>{const note=notes.find(note=>note.id===id);if(!note)throw Error('An attached note no longer exists.');return{id:note.id,title:note.title,body:note.body}}),project=conversation.projectId?this.project(conversation.projectId):null;
-  const item={id:randomUUID(),text:content,createdAt:Date.now(),connectionId:connection.id,connectionName:connection.name,connectionUpdatedAt:connection.updatedAt??0,model:conversation.model,tools,context,attachments,skillCatalog:discoveryCatalog(this.state,skillIds===undefined?conversation.skillIds:skillIds,project),skillContext:resolveSkills(this.state,skillIds===undefined?conversation.skillIds:skillIds,project),projectContext:structuredClone(project),...(artifactContext!==undefined?{artifactContext:structuredClone(artifactContext)}:{})};
+  const item={connectorIds:selectedConnectors(this.connectors,connectorIds===undefined?conversation.connectorIds:connectorIds,project),id:randomUUID(),text:content,createdAt:Date.now(),connectionId:connection.id,connectionName:connection.name,connectionUpdatedAt:connection.updatedAt??0,model:conversation.model,tools,context,attachments,skillCatalog:discoveryCatalog(this.state,skillIds===undefined?conversation.skillIds:skillIds,project),skillContext:resolveSkills(this.state,skillIds===undefined?conversation.skillIds:skillIds,project),projectContext:structuredClone(project),...(artifactContext!==undefined?{artifactContext:structuredClone(artifactContext)}:{})};
   validatePrompt(this,conversation,item);
-  this.change(state=>{const target=this.conversation(conversationId,state);target.queue??={items:[],paused:false,error:''};if(target.queue.items.length>=20)throw Error('Queue up to 20 messages per chat.');target.queue.items.push(item);if(skillIds!==undefined)target.skillIds=structuredClone(skillIds);if(state.drafts)delete state.drafts[conversationId];target.updatedAt=Date.now();return null});
+  this.change(state=>{const target=this.conversation(conversationId,state);target.queue??={items:[],paused:false,error:''};if(target.queue.items.length>=20)throw Error('Queue up to 20 messages per chat.');target.queue.items.push(item);if(skillIds!==undefined)target.skillIds=structuredClone(skillIds);if(connectorIds!==undefined)target.connectorIds=structuredClone(connectorIds);if(state.drafts)delete state.drafts[conversationId];target.updatedAt=Date.now();return null});
   for(const attachment of attachments)this.attachments.discard(attachment.id);void this.drainQueues();return this.snapshot();
  },
  updateQueuedMessage({conversationId,id,text:content,move,remove}={}){
