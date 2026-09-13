@@ -52,6 +52,7 @@ function createWindow() {
  window.on('closed', () => { window = null; clearTimeout(closeTimer); closeRequests.reset(); });
  window.webContents.on('render-process-gone', () => { closeRequests.reset(); voice?.close(); chat?.stopAll('interrupted','The app window closed unexpectedly.'); });
  window.loadFile(index);
+ void connectors?.restoreConnections().catch(()=>{});
 }
 app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); } });
 app.on('before-quit', event => { if (window && !window.isDestroyed()) { event.preventDefault(); quitting = true; window.close(); } });
@@ -149,7 +150,7 @@ app.whenReady().then(async () => {
   if (!trusted(event)||closeRequests.active?.id!==id||closeRequests.active.phase!=='waiting') return;
   if (typeof error === 'string') { closeFailed(id, error); return; }
   clearTimeout(closeTimer);
-  try { voice?.close(); chat?.shutdown(); if(connectors)await Promise.all(connectors.list().map(row=>connectors.disconnect(row.id))); } catch(error) { closeFailed(id,error.message); return; }
+  try { voice?.close(); chat?.shutdown(); await connectors?.suspend(); } catch(error) { closeFailed(id,error.message); return; }
   if (!closeRequests.complete(id)) return;
   clearTimeout(closeTimer);
   const shouldQuit = quitting;

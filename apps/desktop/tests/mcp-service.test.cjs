@@ -218,3 +218,53 @@ test('google-drive migrates trusted credentials and verifies standard API access
  const migrated=new ConnectorService({directory,credentials,fetchImpl:service.fetchImpl,openExternal:async()=>{throw Error('Saved authorization must not open a browser')}});t.after(()=>migrated.close());assert.equal(migrated.list()[0].url,url);
  await migrated.connect(id);assert.equal(migrated.list()[0].status,'connected');assert.equal(migrated.list()[0].name,'My mail');assert.ok(migrated.list()[0].tools.some(tool=>tool.name==='search_files'));assert.ok(migrated.list()[0].tools.every(tool=>!tool.enabled));assert.equal((await secrets.get('clientSecret')).url,url);assert.equal((await secrets.get('tokens')).resourceUrl,url);assert.ok(calls.every(url=>!url.includes('mcp')));assert.ok(!fs.readFileSync(path.join(directory,'mcp-connectors.json'),'utf8').includes('saved-access'));
 });
+
+test('launch restores connected OAuth sessions and selected tools, but not deliberate disconnects or unused presets',async t=>{
+ const f=await fixture(t,{oauth:true});const {service,directory,credentials}=setup(t,{allowLoopbackHttp:true,openExternal:f.openExternal});
+ const first=await service.save({name:'Remember me',url:f.origin+'/mcp'});
+ const off=await service.save({name:'Leave off',url:f.origin+'/mcp'});
+ await service.save({name:'Never connected',url:f.origin+'/mcp'});
+ await service.connect(first.id);await service.setTools({id:first.id,names:['echo']});await service.connect(off.id);await service.disconnect(off.id);
+ const revision=service.get(first.id).revision,opens=f.opens;await service.close();f.rejectAccess=true;
+ const reopened=new ConnectorService({directory,credentials,allowLoopbackHttp:true,openExternal:f.openExternal});t.after(()=>reopened.close());
+ await reopened.restoreConnections();
+ assert.equal(reopened.get(first.id).status,'connected');assert.equal(reopened.get(first.id).revision,revision);assert.equal(reopened.get(first.id).tools[0].enabled,true);
+ assert.equal(reopened.get(off.id).status,'disconnected');assert.equal(reopened.list()[2].status,'disconnected');assert.equal(f.opens,opens);
+ assert.equal(reopened.sessions.get(first.id).provider.server,undefined);
+ assert.equal((await reopened.callTool(first.id,'echo',{text:'After relaunch'},{expectedRevision:revision})).content[0].text,'After relaunch');
+});
+
+test('missing saved authorization requires sign-in without a browser or fresh registration on launch',async t=>{
+ const f=await fixture(t,{oauth:true});const {service,directory,credentials}=setup(t,{allowLoopbackHttp:true,openExternal:f.openExternal});
+ const row=await service.save({name:'OAuth',url:f.origin+'/mcp'});await service.connect(row.id);await service.close();
+ const {SecretStore}=require('../electron/mcp/security.cjs');await new SecretStore(credentials,row.id).delete('tokens');
+ const reopened=new ConnectorService({directory,credentials,allowLoopbackHttp:true,openExternal:f.openExternal});t.after(()=>reopened.close());
+ await reopened.restoreConnections();assert.equal(reopened.get(row.id).status,'error');assert.equal(reopened.get(row.id).needsSignIn,true);assert.equal(f.opens,1);
+ await reopened.connect(row.id);assert.equal(reopened.get(row.id).status,'connected');assert.equal(reopened.get(row.id).needsSignIn,undefined);assert.equal(f.opens,2);
+});
+
+test('window suspension preserves intent; disconnecting a queued connector prevents restoration',async t=>{
+ const f=await fixture(t);const {service}=setup(t,{allowLoopbackHttp:true});const ids=[];
+ for(let i=0;i<4;i++){const row=await service.save({name:`Connector ${i}`,url:f.origin+'/mcp'});ids.push(row.id);await service.connect(row.id)}
+ await service.suspend();assert.ok(service.list().every(row=>row.status==='disconnected'&&row.autoConnect));
+ const restoring=service.restoreConnections();await service.disconnect(ids[3]);await restoring;
+ assert.equal(service.get(ids[3]).status,'disconnected');assert.equal(service.get(ids[3]).autoConnect,false);
+ await service.suspend();const pending=service.restoreConnections();await service.suspend();await pending;
+ assert.ok(service.list().every(row=>row.status==='disconnected'));assert.equal(service.sessions.size,0);
+});
+
+test('old metadata does not guess whether a previously used connector was deliberately disconnected',async t=>{
+ const f=await fixture(t);const {service,directory,credentials}=setup(t,{allowLoopbackHttp:true});const row=await service.save({name:'Legacy',url:f.origin+'/mcp'});await service.connect(row.id);await service.close();
+ const saved=JSON.parse(fs.readFileSync(service.file));delete saved.connectors[0].autoConnect;fs.writeFileSync(service.file,JSON.stringify(saved));
+ const reopened=new ConnectorService({directory,credentials,allowLoopbackHttp:true,openExternal:async()=>{throw Error('Must not open')}});t.after(()=>reopened.close());await reopened.restoreConnections();assert.equal(reopened.get(row.id).status,'disconnected');
+});
+
+test('a timed-out background connection reports failure without preventing the other saved connectors restoring',async t=>{
+ const f=await fixture(t);const {service}=setup(t,{allowLoopbackHttp:true});
+ const slow=await service.save({name:'Unavailable',url:f.origin+'/mcp'}),good=await service.save({name:'Available',url:f.origin+'/mcp'});
+ await service.connect(slow.id);await service.connect(good.id);await service.suspend();
+ service.connectTimeoutMs=100;
+ // Hold one request at the transport boundary; the other worker can finish.
+ const originalFetch=service.fetchImpl;let calls=0;service.fetchImpl=async(url,init)=>{if(++calls===1)return new Promise((resolve,reject)=>init.signal.addEventListener('abort',()=>reject(init.signal.reason),{once:true}));return originalFetch(url,init)};
+ await service.restoreConnections();assert.ok(service.list().some(row=>row.status==='connected'));assert.ok(service.list().some(row=>row.status==='error'&&/timed out/.test(row.error)&&!row.needsSignIn));
+});

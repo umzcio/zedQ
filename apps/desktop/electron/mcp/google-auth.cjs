@@ -37,7 +37,7 @@ async function prepareGoogleAuthorization({row,provider,fetchImpl=globalThis.fet
  const entry=googleEntry(row);if(!entry)return false;const direct=entry.bundled===true;
  if(direct)provider.validateResourceURL=(requested,advertised)=>{if(requested.href!==row.url||advertised!==row.url)throw new ConnectorError('Google API resource changed.');return undefined};
  if(row.authType&&row.authType!=='oauth')throw new ConnectorError('Google Workspace presets require OAuth. Choose OAuth and enter your registered Google client ID and secret.');
- if(!provider?.interactive)throw new ConnectorError('Reconnect this Google connector to sign in. Authorization can only start during explicit Connect.');
+ if(!provider?.interactive&&!provider?.savedTokens)throw provider.signInRequired();
  if(!row.clientId||!provider.manualSecret?.value)throw new ConnectorError('Enter the Google OAuth web client ID and client secret, enable the required Google API in that Cloud project, then connect.');
  if(!['127.0.0.1','localhost'].includes(row.redirectHost??'127.0.0.1')||!Number.isInteger(row.redirectPort)||row.redirectPort<1||row.redirectPort>65535||provider.redirectUrl!==`http://${row.redirectHost??'127.0.0.1'}:${row.redirectPort}/oauth/callback`)throw new ConnectorError('Configure a fixed local callback port and register its exact callback URL in your Google OAuth web client, then connect.');
  signal?.throwIfAborted();
@@ -65,6 +65,7 @@ async function prepareGoogleAuthorization({row,provider,fetchImpl=globalThis.fet
   const prior=provider.savedTokens;
   const correctGrant=prior?.resourceUrl===row.url&&issuerMatches(prior.issuer)&&scopesCover(prior.scope,required);
   if(correctGrant&&prior.access_token&&Number.isFinite(prior.expiresAt)&&prior.expiresAt>Date.now()+30000)return complete();
+  if(!provider.interactive&&(!correctGrant||!prior?.refresh_token))throw provider.signInRequired();
   provider.challenge={scope:required.join(' ')};
   const oauthProvider=new Proxy(provider,{get(target,key){
    if(key==='redirectToAuthorization')return async value=>{
@@ -74,7 +75,7 @@ async function prepareGoogleAuthorization({row,provider,fetchImpl=globalThis.fet
    };
    const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
   }});
-  const result=await auth(oauthProvider,{serverUrl:row.url,scope:provider.challenge.scope,fetchFn:googleFetch,forceReauthorization:!correctGrant});
+  const result=await auth(oauthProvider,{serverUrl:row.url,scope:provider.challenge.scope,fetchFn:provider.authorizationFetch(googleFetch),forceReauthorization:!correctGrant});
   if(result==='REDIRECT'){
    const params=await waiting(provider.callback,signal);signal?.throwIfAborted();await provider.finish(params,googleFetch);
   }else if(result!=='AUTHORIZED')throw new ConnectorError('Google authorization did not complete. Reconnect to sign in.');

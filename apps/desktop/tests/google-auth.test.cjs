@@ -5,11 +5,11 @@ const {NativeOAuthProvider}=require('../electron/mcp/oauth.cjs');
 const GOOGLE='https://gmailmcp.googleapis.com/mcp/v1';
 const SCOPES=['https://www.googleapis.com/auth/gmail.readonly','https://www.googleapis.com/auth/gmail.compose'];
 async function freePort(){const server=net.createServer();await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const port=server.address().port;await new Promise(resolve=>server.close(resolve));return port}
-async function fixture(t,{tokens,manualSecret=true,complete=true,metadataChanges={},rowChanges={},supportedScopes=SCOPES,tokenChanges={}}={}){
+async function fixture(t,{interactive=true,tokens,manualSecret=true,complete=true,metadataChanges={},rowChanges={},supportedScopes=SCOPES,tokenChanges={}}={}){
  const row={id:'google-fixture',catalogId:'gmail',name:'Gmail',url:GOOGLE,authType:'oauth',clientId:'fixture-client.apps.googleusercontent.com',redirectHost:'127.0.0.1',redirectPort:await freePort(),...rowChanges};
  const slots=new Map([['clientSecret',manualSecret?{value:'fixture-client-secret',url:row.url,clientId:row.clientId}:undefined],['tokens',tokens?{resourceUrl:row.url,...tokens}:undefined]]);
  const controller=new AbortController(),opened=[],requests=[];let authenticating=0;
- const provider=new NativeOAuthProvider({row,signal:controller.signal,secrets:{queue:Promise.resolve(),get:async k=>structuredClone(slots.get(k)),set:async(k,v)=>slots.set(k,structuredClone(v)),delete:async k=>slots.delete(k)},onAuthenticating:()=>{authenticating++},openExternal:async value=>{
+ const provider=new NativeOAuthProvider({row,interactive,signal:controller.signal,secrets:{queue:Promise.resolve(),get:async k=>structuredClone(slots.get(k)),set:async(k,v)=>slots.set(k,structuredClone(v)),delete:async k=>slots.delete(k)},onAuthenticating:()=>{authenticating++},openExternal:async value=>{
   const url=new URL(value);opened.push(url);
   if(complete){const callback=new URL(url.searchParams.get('redirect_uri'));callback.searchParams.set('state',url.searchParams.get('state'));callback.searchParams.set('code','fixture-code');callback.searchParams.set('iss','https://accounts.google.com');const response=await fetch(callback);assert.equal(response.status,200)}
  }});
@@ -98,4 +98,25 @@ test('direct Calendar and Drive authorize and refresh independently on their sha
   ['google-calendar','https://www.googleapis.com/calendar/v3',['calendar.calendarlist.readonly','calendar.events.freebusy','calendar.events.readonly']],
   ['google-drive','https://www.googleapis.com/drive/v3',['drive.readonly','drive.file']],
  ]){const required=scopes.map(s=>'https://www.googleapis.com/auth/'+s);const f=await fixture(t,{rowChanges:{catalogId,url},supportedScopes:required});await call(f);assert.equal(f.opened[0].searchParams.has('resource'),false);assert.deepEqual(f.opened[0].searchParams.get('scope').split(' '),required);assert.ok(f.requests.every(r=>!r.url.includes('oauth-protected-resource')));await googleAccessToken(f.provider,f.fetchImpl,true);assert.equal(f.opened.length,1);assert.equal(f.provider.savedTokens.resourceUrl,url);}
+});
+
+
+test('background Google reconnect refreshes without binding the shared callback port',async t=>{
+ const port=await freePort(),occupied=require('node:http').createServer();await new Promise(resolve=>occupied.listen(port,'127.0.0.1',resolve));t.after(()=>occupied.close());
+ const f=await fixture(t,{interactive:false,rowChanges:{url:'https://gmail.googleapis.com/gmail/v1',redirectPort:port},tokens:{access_token:'expired-token',refresh_token:'cached-refresh',issuer:'https://accounts.google.com',expiresAt:Date.now()-1,scope:SCOPES.join(' ')}});
+ assert.equal(await call(f),true);assert.equal(f.provider.server,undefined);assert.equal(f.opened.length,0);assert.equal(f.requests.find(r=>r.url.endsWith('/token')).init.body.get('grant_type'),'refresh_token');
+});
+
+test('background Google reconnect requires new consent for missing scopes without opening the browser',async t=>{
+ const f=await fixture(t,{interactive:false,rowChanges:{url:'https://gmail.googleapis.com/gmail/v1'},tokens:{access_token:'cached-token',refresh_token:'cached-refresh',issuer:'https://accounts.google.com',expiresAt:Date.now()+3600000,scope:SCOPES[0]}});
+ await assert.rejects(call(f),error=>error.needsSignIn===true);assert.equal(f.opened.length,0);assert.equal(f.requests.filter(r=>r.url.endsWith('/token')).length,0);
+});
+
+
+test('revoked Google refresh grant requires sign-in while a temporary token outage only needs retry',async t=>{
+ for(const temporary of [false,true]){
+  const f=await fixture(t,{interactive:false,rowChanges:{url:'https://gmail.googleapis.com/gmail/v1'},tokens:{access_token:'expired-token',refresh_token:'cached-refresh',issuer:'https://accounts.google.com',expiresAt:Date.now()-1,scope:SCOPES.join(' ')}});
+  const fetchImpl=f.fetchImpl;f.fetchImpl=(url,init)=>String(url).endsWith('/token')?Promise.resolve(Response.json({error:temporary?'server_error':'invalid_grant'},{status:temporary?503:400})):fetchImpl(url,init);
+  await assert.rejects(call(f));assert.equal(f.provider.needsSignIn===true,!temporary);assert.equal(f.opened.length,0);assert.equal(f.provider.server,undefined);
+ }
 });
