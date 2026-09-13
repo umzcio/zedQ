@@ -1,7 +1,7 @@
 'use strict';
 const {auth,discoverOAuthServerInfo}=require('@modelcontextprotocol/client');
 const {ConnectorError,createSafeFetch,boundedJSON}=require('./security.cjs');
-const {getCatalogEntry,LEGACY_GMAIL,GMAIL_API}=require('./catalog.cjs');
+const {getCatalogEntry,LEGACY_GOOGLE,GMAIL_API}=require('./catalog.cjs');
 
 // Google permits anonymous MCP initialization/tool discovery. Authorization must
 // therefore finish during explicit Connect, before those public methods succeed.
@@ -18,8 +18,9 @@ const AUTHORIZATION_ENDPOINT=ISSUER+'/o/oauth2/v2/auth';
 const TOKEN_ENDPOINT='https://oauth2.googleapis.com/token';
 function googleEntry(row){
  let origin;try{origin=new URL(row?.url).origin}catch{return undefined}
- const entry=[...Object.keys(SCOPES).map(getCatalogEntry),{...getCatalogEntry('gmail'),url:LEGACY_GMAIL,bundled:false}].find(item=>item&&new URL(item.url).origin===origin);
- if(entry&&entry.url!==row.url)throw new ConnectorError(`Use the exact Google MCP URL for this connector: ${entry.url}`);
+ const entries=[...Object.keys(SCOPES).map(getCatalogEntry),...Object.entries(LEGACY_GOOGLE).map(([id,url])=>({...getCatalogEntry(id),url,bundled:false}))];
+ const entry=entries.find(item=>item.url===row.url);
+ if(!entry&&entries.some(item=>new URL(item.url).origin===origin))throw new ConnectorError('Use the exact Google API or MCP URL for this connector.');
  return entry;
 }
 function scopesCover(value,required){const granted=new Set(typeof value==='string'?value.split(/\s+/):[]);return required.every(scope=>granted.has(scope))}
@@ -33,8 +34,8 @@ function waiting(promise,signal){
  });
 }
 async function prepareGoogleAuthorization({row,provider,fetchImpl=globalThis.fetch,signal=provider?.signal}={}){
- const entry=googleEntry(row);if(!entry)return false;const direct=entry.id==='gmail'&&row.url===GMAIL_API;
- if(direct)provider.validateResourceURL=(requested,advertised)=>{if(requested.href!==GMAIL_API||advertised!==GMAIL_API)throw new ConnectorError('Gmail API resource changed.');return undefined};
+ const entry=googleEntry(row);if(!entry)return false;const direct=entry.bundled===true;
+ if(direct)provider.validateResourceURL=(requested,advertised)=>{if(requested.href!==row.url||advertised!==row.url)throw new ConnectorError('Google API resource changed.');return undefined};
  if(row.authType&&row.authType!=='oauth')throw new ConnectorError('Google Workspace presets require OAuth. Choose OAuth and enter your registered Google client ID and secret.');
  if(!provider?.interactive)throw new ConnectorError('Reconnect this Google connector to sign in. Authorization can only start during explicit Connect.');
  if(!row.clientId||!provider.manualSecret?.value)throw new ConnectorError('Enter the Google OAuth web client ID and client secret, enable the required Google API in that Cloud project, then connect.');
@@ -90,21 +91,22 @@ async function prepareGoogleAuthorization({row,provider,fetchImpl=globalThis.fet
   throw new ConnectorError('Google authorization failed. Check the registered client, callback URL, enabled APIs, MCP services and consent-screen test users, then reconnect.');
  }
 }
-async function gmailAccessToken(provider,fetchImpl,force=false){
- const required=SCOPES.gmail.map(scope=>PREFIX+scope);
+async function googleAccessToken(provider,fetchImpl,force=false){
+ const entry=googleEntry(provider.row);if(!entry?.bundled)throw new ConnectorError('Unknown Google API resource.');
+ const required=SCOPES[entry.id].map(scope=>PREFIX+scope);
  const current=provider.savedTokens;
  if(!force&&current?.access_token&&current.expiresAt>Date.now()+30000)return current.access_token;
  if(!provider.refreshFlight)provider.refreshFlight=(async()=>{
-  if(!provider.savedTokens?.refresh_token)throw new ConnectorError('Gmail authorization expired. Reconnect Gmail to sign in.');
-  const safe=createSafeFetch({signal:provider.signal,fetchImpl,maxBytes:128*1024,timeoutMs:15000,credentialOrigin:'https://gmail.googleapis.com',tokenEndpoint:()=>TOKEN_ENDPOINT});
+  if(!provider.savedTokens?.refresh_token)throw new ConnectorError('Google authorization expired. Reconnect this connector to sign in.');
+  const safe=createSafeFetch({signal:provider.signal,fetchImpl,maxBytes:128*1024,timeoutMs:15000,credentialOrigin:new URL(provider.row.url).origin,tokenEndpoint:()=>TOKEN_ENDPOINT});
   const tokenFetch=(input,init)=>{if(String(input)!==TOKEN_ENDPOINT)throw new ConnectorError('Unexpected Google token endpoint.');return safe(input,init)};
   await provider.transportAuth().onUnauthorized({response:new Response(null,{status:401}),fetchFn:tokenFetch});
   const saved=provider.savedTokens;
-  if(!saved?.access_token||saved.resourceUrl!==GMAIL_API||!issuerMatches(saved.issuer))throw new ConnectorError('Gmail authorization expired. Reconnect Gmail to sign in.');
+  if(!saved?.access_token||saved.resourceUrl!==provider.row.url||!issuerMatches(saved.issuer))throw new ConnectorError('Google authorization expired. Reconnect this connector to sign in.');
   if(saved.scope===undefined)await provider.saveTokens({...saved,scope:required.join(' ')});
-  else if(!scopesCover(saved.scope,required))throw new ConnectorError('Reconnect Gmail and approve the required mail access.');
+  else if(!scopesCover(saved.scope,required))throw new ConnectorError('Reconnect this Google connector and approve the required access.');
   return provider.savedTokens.access_token;
  })().finally(()=>{provider.refreshFlight=undefined});
  return provider.refreshFlight;
 }
-module.exports={prepareGoogleAuthorization,gmailAccessToken};
+module.exports={prepareGoogleAuthorization,googleAccessToken,gmailAccessToken:googleAccessToken};

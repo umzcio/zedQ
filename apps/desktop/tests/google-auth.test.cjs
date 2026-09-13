@@ -91,3 +91,11 @@ test('standard Gmail API authorization skips MCP discovery and renews tokens wit
  await gmailAccessToken(f.provider,f.fetchImpl,true);assert.equal(f.opened.length,1);assert.equal(f.requests.at(-1).init.body.get('grant_type'),'refresh_token');
  delete f.provider.savedTokens.refresh_token;await assert.rejects(gmailAccessToken(f.provider,f.fetchImpl,true),/Reconnect/);assert.equal(f.opened.length,1);
 });
+
+test('direct Calendar and Drive authorize and refresh independently on their shared API origin',async t=>{
+ const {googleAccessToken}=require('../electron/mcp/google-auth.cjs');
+ for(const [catalogId,url,scopes]of[
+  ['google-calendar','https://www.googleapis.com/calendar/v3',['calendar.calendarlist.readonly','calendar.events.freebusy','calendar.events.readonly']],
+  ['google-drive','https://www.googleapis.com/drive/v3',['drive.readonly','drive.file']],
+ ]){const required=scopes.map(s=>'https://www.googleapis.com/auth/'+s);const f=await fixture(t,{rowChanges:{catalogId,url},supportedScopes:required});await call(f);assert.equal(f.opened[0].searchParams.has('resource'),false);assert.deepEqual(f.opened[0].searchParams.get('scope').split(' '),required);assert.ok(f.requests.every(r=>!r.url.includes('oauth-protected-resource')));await googleAccessToken(f.provider,f.fetchImpl,true);assert.equal(f.opened.length,1);assert.equal(f.provider.savedTokens.resourceUrl,url);}
+});

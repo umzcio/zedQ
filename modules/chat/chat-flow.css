@@ -41,3 +41,5 @@
 .chat-interaction > header .chat-approval-summary span { margin: 0; font-size: 11px; }
 .chat-approval-summary[data-state="open"] .chat-approval-chevron { transform: rotate(90deg); }
 .chat-interaction-completed > [data-slot="collapsible-content"] > .chat-interaction-question { margin-top: 6px; }
+
+.chat-interaction-detail { max-height: 340px; overflow-y: auto; }

@@ -2,6 +2,7 @@
 const {createHash,randomUUID}=require('node:crypto');
 const {inspectToolSchema,validateToolArguments}=require('./mcp/schema.cjs');
 const {recordActivity,recordSources,recordArtifact,externalURL}=require('./chat-tools.cjs');
+const {isBundledGmail}=require('./mcp/catalog.cjs');
 const MAX_SELECTED=10;
 function validConnectorIds(value,{nullable=false}={}){return value===undefined||nullable&&value===null||Array.isArray(value)&&value.length<=MAX_SELECTED&&new Set(value).size===value.length&&value.every(id=>typeof id==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(id))}
 function selectedConnectors(service,value,project){
@@ -45,15 +46,18 @@ function createConnectorExecutor({service,entries,interactions,conversationId,ru
   // MCP annotations are untrusted hints. Require a real grant for external tools,
   // bound to this connector revision; subsequent calls reuse the chat grant.
   const grant='mcp:'+digest([row.id,row.revision,tool.name,tool.inputSchema]);
-  const detail=`${row.name} · ${tool.title||tool.name}\n${JSON.stringify(call.arguments).slice(0,1600)}`;
-  if(!await interactions.approve(conversationId,run,grant,detail,{required:true,question:`Allow ${row.name} to run ${tool.title||tool.name}?`}))return {isError:true,error:'The user denied this connector action. Do not retry it.'};
+  const sending=isBundledGmail(row)&&tool.name==='send_draft';
+  let prepared;try{if(sending)prepared=await service.prepareGmailSend(row.id,call.arguments.draftId,{signal:run.controller.signal,expectedRevision:row.revision})}catch(error){return {isError:true,error:error.message}}
+  current();
+  const detail=prepared?.detail??`${row.name} · ${tool.title||tool.name}\n${JSON.stringify(call.arguments).slice(0,1600)}`;
+  if(!await interactions.approve(conversationId,run,grant,detail,{required:true,onceOnly:sending,question:sending?'Send this email?':`Allow ${row.name} to run ${tool.title||tool.name}?`}))return {isError:true,error:'The user denied this connector action. Do not retry it.'};
   current();const id=randomUUID(),label=`${row.name} · ${tool.title||tool.name}`;
   update(reply=>recordActivity(reply,{id,kind:'mcp',status:'running',detail:label},['mcp']));
   let received=false;
   try{
-   const result=await service.callTool(row.id,tool.name,call.arguments,{signal:run.controller.signal,expectedRevision:row.revision});
+   const result=await service.callTool(row.id,tool.name,prepared?.arguments??call.arguments,{signal:run.controller.signal,expectedRevision:row.revision});
    received=true;current();
-   const clean=structuredClone(result);const sources=[],files=[];
+   const clean=structuredClone(result);if(sending&&clean.isError)uncertain.add(call.name);const sources=[],files=[];
    for(const content of clean.content??[]){
     if(content.type==='resource_link'&&typeof content.uri==='string'){try{sources.push({id:'mcp-'+digest(content.uri),url:externalURL(content.uri),title:String(content.title||content.name||content.uri).slice(0,1024)})}catch{}}
     if(content.type==='resource'&&content.resource?.blob&&typeof content.resource.blob==='string'){

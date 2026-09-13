@@ -1,6 +1,7 @@
 'use strict';
 // Standard Gmail REST API, exposed through a bundled, in-memory MCP server.
 // https://developers.google.com/workspace/gmail/api/reference/rest
+const {randomUUID,createHash}=require('node:crypto');
 const {Client}=require('@modelcontextprotocol/client');
 const {McpServer,InMemoryTransport}=require('@modelcontextprotocol/server');
 const {z}=require('zod/v4');
@@ -25,7 +26,7 @@ function messageSummary(message,body=false,bodyLimit=16000){
    for(const child of part.parts??[])visit(child,depth+1);
   };visit(message.payload);
   const text=(plain.length?plain:html).join('\n');result[plain.length?'body':'htmlBody']=text.slice(0,bodyLimit);if(text.length>bodyLimit)result.bodyTruncated=true;
-  if(attachments.length)result.attachments=attachments.slice(0,5);
+  if(attachments.length)result.attachments=attachments.slice(0,5);if(attachments.length>5)result.attachmentsTruncated=true;
  }
  return result;
 }
@@ -40,8 +41,8 @@ function mimeDraft(args,reply){
 }
 async function createGmailSession({signal,fetchImpl=globalThis.fetch,getToken}={}){
  signal?.throwIfAborted();const controller=new AbortController(),server=new McpServer({name:'zQ Gmail',version:'1.0.0'}),client=new Client({name:'zQ',version:'1.0.0'});
- const [clientTransport,serverTransport]=InMemoryTransport.createLinkedPair();let closing;
- const close=()=>{if(closing)return closing;controller.abort();signal?.removeEventListener('abort',onAbort);closing=Promise.allSettled([client.close(),server.close()]).then(()=>undefined);return closing};
+ const [clientTransport,serverTransport]=InMemoryTransport.createLinkedPair();let closing;const reviews=new Map();
+ const close=()=>{if(closing)return closing;reviews.clear();controller.abort();signal?.removeEventListener('abort',onAbort);closing=Promise.allSettled([client.close(),server.close()]).then(()=>undefined);return closing};
  const onAbort=()=>{void close()};signal?.addEventListener('abort',onAbort,{once:true});
  const request=async(route,params,signal,body)=>{
   const url=new URL(route,API);if(!url.href.startsWith(API))throw new ConnectorError('Invalid Gmail request.');
@@ -58,7 +59,7 @@ async function createGmailSession({signal,fetchImpl=globalThis.fetch,getToken}={
     if(response.status===403)throw new ConnectorError('Google denied Gmail access. Reconnect and approve mail access; check the OAuth app and account settings.');
     if(response.status===404)throw new ConnectorError('That Gmail message, thread, or draft no longer exists.');
     if(response.status===429)throw new ConnectorError('Gmail is limiting requests. Try again shortly.');
-    throw new ConnectorError(body?'Gmail could not confirm the draft was created. Check Drafts before retrying to avoid duplicates.':'Gmail could not complete the request. Try again later.');
+    throw new ConnectorError(route==='drafts/send'?'Gmail could not confirm sending. Check Sent before trying again; do not resend automatically.':body?'Gmail could not confirm the draft was created. Check Drafts before retrying to avoid duplicates.':'Gmail could not complete the request. Try again later.');
    }
    return response.json();
   }
@@ -66,7 +67,7 @@ async function createGmailSession({signal,fetchImpl=globalThis.fetch,getToken}={
  const register=(name,title,description,inputSchema,execute,annotations=read)=>server.registerTool(name,{title,description,inputSchema:inputSchema.strict(),annotations},async(args,context)=>{
   const combined=AbortSignal.any([controller.signal,context.mcpReq.signal,AbortSignal.timeout(60000)]);
   try{const result=await execute(args,(route,params,body)=>request(route,params,combined,body));combined.throwIfAborted();return {content:[{type:'text',text:boundedJSON(result,90000,'Gmail result')}]} }
-  catch(error){return {isError:true,content:[{type:'text',text:combined.aborted?'Gmail request cancelled or timed out.':error instanceof ConnectorError?error.message:name==='create_draft'?'Gmail could not confirm the draft was created. Check Drafts before retrying to avoid duplicates.':'Gmail could not complete the request. Try again later.'}]}}
+  catch(error){return {isError:true,content:[{type:'text',text:name==='send_draft'&&combined.aborted?'Sending was interrupted. Check Sent before trying again; do not resend automatically.':combined.aborted?'Gmail request cancelled or timed out.':error instanceof ConnectorError?error.message:name==='send_draft'?'Gmail could not confirm sending. Check Sent before trying again; do not resend automatically.':name==='create_draft'?'Gmail could not confirm the draft was created. Check Drafts before retrying to avoid duplicates.':'Gmail could not complete the request. Try again later.'}]}}
  });
  const thread=async(api,threadId,body,limit=10)=>{const data=await api(`threads/${id.parse(threadId)}`,{format:body?'full':'metadata'});const messages=data.messages??[],selected=messages.slice(-limit),bodyLimit=Math.min(16000,Math.floor(16000/Math.max(1,selected.length)));return {id:data.id,messages:selected.map(m=>messageSummary(m,body,bodyLimit)),...(messages.length>limit?{messagesTruncated:true,totalMessages:messages.length}:{})}};
  register('search_threads','Search Gmail','Search mail using Gmail search syntax. Returns the latest message metadata for each matching thread and a nextPageToken when there are more results. Read matching threads with get_thread. Up to ten results per page.',z.object({query,...page,includeTrash:z.boolean().default(false),view:z.enum(['THREAD_VIEW_UNSPECIFIED','THREAD_VIEW_METADATA_ONLY','THREAD_VIEW_MINIMAL']).optional()}),async(args,api)=>{
@@ -80,11 +81,38 @@ async function createGmailSession({signal,fetchImpl=globalThis.fetch,getToken}={
  register('list_drafts','List Gmail drafts','List draft IDs and message IDs, with pagination. Use get_draft to read a draft.',z.object({...page,query}), (args,api)=>api('drafts',{q:args.query,maxResults:args.pageSize,pageToken:args.pageToken}));
  register('get_draft','Read Gmail draft','Read one saved draft.',z.object({draftId:id}),async(args,api)=>{const draft=await api(`drafts/${args.draftId}`,{format:'full'});return {id:draft.id,message:messageSummary(draft.message??{},true)}});
  const addresses=z.array(z.string().email().max(254).regex(/^[^\r\n]+$/)).max(50).optional();
- register('create_draft','Create Gmail draft','Create a draft for the user to review and send in Gmail. This never sends mail. Supply plain text body or htmlBody. Optional replyToMessageId creates a threaded reply draft.',z.object({to:addresses,cc:addresses,bcc:addresses,subject:z.string().max(500).optional(),body:z.string().max(40000).optional(),htmlBody:z.string().max(40000).optional(),replyToMessageId:id.optional()}),async(args,api)=>{
+ register('create_draft','Create Gmail draft','Create a draft for review. Use send_draft when the user asks to send it. This never sends mail. Supply plain text body or htmlBody. Optional replyToMessageId creates a threaded reply draft.',z.object({to:addresses,cc:addresses,bcc:addresses,subject:z.string().max(500).optional(),body:z.string().max(40000).optional(),htmlBody:z.string().max(40000).optional(),replyToMessageId:id.optional()}),async(args,api)=>{
   const reply=args.replyToMessageId?await api(`messages/${args.replyToMessageId}`,{format:'metadata'}):undefined;
   return api('drafts',undefined,mimeDraft(args,reply));
  },{readOnlyHint:false,destructiveHint:false,idempotentHint:false,openWorldHint:true});
- try{await server.connect(serverTransport);await client.connect(clientTransport,{signal:controller.signal,timeout:5000});signal?.throwIfAborted();return {client,close,verifyAccess:async()=>{const profile=await request('profile',undefined,controller.signal);if(typeof profile.emailAddress!=='string')throw new ConnectorError('Gmail account access could not be verified. Reconnect Gmail.')}}}
+ const fingerprint=raw=>createHash('sha256').update(raw).digest('hex');
+ const prepareSend=async(draftId,signal)=>{
+  id.parse(draftId);const combined=AbortSignal.any([controller.signal,signal,AbortSignal.timeout(60000)].filter(Boolean));
+  const draft=await request(`drafts/${draftId}`,{format:'full'},combined),encoded=await request(`drafts/${draftId}`,{format:'raw'},combined);
+  if(!draft.message?.id||draft.message.id!==encoded.message?.id||typeof encoded.message.raw!=='string')throw new ConnectorError('The draft changed while loading. Review it again before sending.');
+  const raw=encoded.message.raw;if(raw.length>100000)throw new ConnectorError('This draft is too large to send from zQ. Review and send it in Gmail.');
+  const summary=messageSummary(draft.message,true,48000),headers=draft.message.payload?.headers??[];
+  const recipients=['To','Cc','Bcc'].map(name=>`${name}: ${headers.filter(h=>h.name?.toLowerCase()===name.toLowerCase()).map(h=>h.value).join(', ')}`).join('\n');
+  if(summary.bodyTruncated||summary.attachmentsTruncated)throw new ConnectorError('This draft is too large to preview fully. Review and send it in Gmail.');
+  const html=[];let visited=0;const visit=part=>{if(!part||++visited>300)return;if(!part.filename&&part.mimeType==='text/html'&&part.body?.data)html.push(Buffer.from(part.body.data,'base64url').toString('utf8'));for(const child of part.parts??[])visit(child)};visit(draft.message.payload);
+  const htmlPreview=html.length?'\n\nHTML source:\n'+html.join('\n'):'';
+  const detail=`${recipients}\nSubject: ${headers.find(h=>h.name?.toLowerCase()==='subject')?.value??'(no subject)'}\n\n${summary.body??''}${htmlPreview}${summary.attachments?.length?'\n\nAttachments: '+summary.attachments.map(a=>a.filename).join(', '):''}`;
+  if(Buffer.byteLength(detail)>60000)throw new ConnectorError('This draft is too large to preview fully. Review and send it in Gmail.');
+  for(const [key,value]of reviews)if(value.expires<Date.now())reviews.delete(key);
+  if(reviews.size>=30)throw new ConnectorError('Too many draft reviews are pending. Reconnect Gmail and try again.');
+  const reviewToken=randomUUID();reviews.set(reviewToken,{draftId,raw,hash:fingerprint(raw),expires:Date.now()+10*60*1000});
+  return {detail,arguments:{draftId,reviewToken}};
+ };
+ register('send_draft','Send Gmail draft','Send an existing Gmail draft when the user asks to send it. zQ shows the actual recipients and message for approval before sending. Supply draftId from create_draft or list_drafts. Never automatically retry an uncertain send.',z.object({draftId:id,reviewToken:z.string().uuid().optional().describe('Managed by zQ; omit this field.')}),async(args,api)=>{
+  const review=reviews.get(args.reviewToken);reviews.delete(args.reviewToken);
+  if(!review||review.draftId!==args.draftId||review.expires<Date.now())throw new ConnectorError('Review and approve this draft before sending.');
+  const current=await api(`drafts/${args.draftId}`,{format:'raw'});
+  if(typeof current.message?.raw!=='string'||fingerprint(current.message.raw)!==review.hash)throw new ConnectorError('The draft changed after review. Review the updated draft before sending.');
+  // Pass the approved MIME as well as the ID, so a concurrent Gmail edit cannot
+  // substitute different recipients or content between the check and the send.
+  return api('drafts/send',undefined,{id:args.draftId,message:{raw:review.raw}});
+ },{readOnlyHint:false,destructiveHint:true,idempotentHint:false,openWorldHint:true});
+ try{await server.connect(serverTransport);await client.connect(clientTransport,{signal:controller.signal,timeout:5000});signal?.throwIfAborted();return {client,close,prepareSend,verifyAccess:async()=>{const profile=await request('profile',undefined,controller.signal);if(typeof profile.emailAddress!=='string')throw new ConnectorError('Gmail account access could not be verified. Reconnect Gmail.')}}}
  catch(error){await close();throw error}
 }
 module.exports={createGmailSession};

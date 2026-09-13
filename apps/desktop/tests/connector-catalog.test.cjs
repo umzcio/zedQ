@@ -4,7 +4,7 @@ const {getCatalog,getCatalogEntry,isBundledArxiv}=require('../electron/mcp/catal
 test('starter catalog exposes exactly the approved publishers and account types',()=>{
  const rows=getCatalog();assert.deepEqual(rows.map(r=>r.id),['scite','arxiv','scholar-gateway','gmail','google-calendar','google-drive','microsoft365','github']);
  for(const row of rows){assert.equal(new URL(row.url).protocol,'https:');assert.equal(new URL(row.documentationUrl).protocol,'https:');assert.ok(row.description&&row.setupNote);assert.equal(row.token,undefined);assert.equal(row.clientSecret,undefined);}
- for(const id of ['gmail','google-calendar','google-drive']){const row=getCatalogEntry(id);assert.equal(row.accountLabel,'Personal Google account');assert.equal(row.requiresSetup,true);if(id!=='gmail')assert.match(row.setupNote,/developer preview/);else {assert.equal(row.url,'https://gmail.googleapis.com/gmail/v1');assert.equal(row.bundled,true);}assert.equal(row.redirectPort,43187);}
+ for(const id of ['gmail','google-calendar','google-drive']){const row=getCatalogEntry(id);assert.equal(row.accountLabel,'Personal Google account');assert.equal(row.requiresSetup,true);assert.equal(row.bundled,true);if(id==='gmail'){assert.equal(row.url,'https://gmail.googleapis.com/gmail/v1');assert.equal(row.bundled,true);}assert.equal(row.redirectPort,43187);}
  const scholar=getCatalogEntry('scholar-gateway');assert.equal(scholar.url,'https://connector.scholargateway.ai/mcp');assert.equal(scholar.authType,'oauth');assert.equal(scholar.requiresSetup,false);assert.equal(scholar.publisher,'Wiley');
  assert.equal(getCatalogEntry('microsoft365').accountLabel,'Work Microsoft account');assert.equal(getCatalogEntry('github').authType,'bearer');
 });

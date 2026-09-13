@@ -3,7 +3,7 @@ const path=require('node:path');
 const {randomUUID}=require('node:crypto');
 const {Client,StreamableHTTPClientTransport,UnauthorizedError}=require('@modelcontextprotocol/client');
 const {inspectToolSchema,validateToolArguments}=require('./schema.cjs');
-const {isBundledArxiv,isBundledGmail,LEGACY_GMAIL,GMAIL_API}=require('./catalog.cjs');
+const {isBundledArxiv,isBundledGmail,isBundledGoogle,LEGACY_GOOGLE,getCatalogEntry}=require('./catalog.cjs');
 const {NativeOAuthProvider}=require('./oauth.cjs');
 const {ConnectorError,safeError,validUrl,boundedJSON,createSafeFetch,SecretStore}=require('./security.cjs');
 const clone=value=>JSON.parse(JSON.stringify(value));
@@ -18,7 +18,7 @@ class ConnectorService {
  list(){return clone(this.rows.map(row=>({...row,tools:row.tools.map(({outputSchema,...tool})=>tool)})))}
  assertOpen(){if(this.closed)throw new ConnectorError('Connector service is closed.')}
  get(id){this.assertOpen();const row=this.rows.find(r=>r.id===id);if(!row)throw new ConnectorError('Connector no longer exists.');return row}
- validateInput(input){if(!input||typeof input.name!=='string'||!input.name.trim()||input.name.length>100)throw new ConnectorError('Enter a connector name of 1–100 characters.');let url=validUrl(input.url,this.allowLoopbackHttp).href;if(input.catalogId==='gmail'&&url===LEGACY_GMAIL&&(input.authType??'oauth')==='oauth')url=GMAIL_API;
+ validateInput(input){if(!input||typeof input.name!=='string'||!input.name.trim()||input.name.length>100)throw new ConnectorError('Enter a connector name of 1–100 characters.');let url=validUrl(input.url,this.allowLoopbackHttp).href;if(LEGACY_GOOGLE[input.catalogId]&&url===LEGACY_GOOGLE[input.catalogId]&&(input.authType??'oauth')==='oauth')url=getCatalogEntry(input.catalogId).url;
   const authType=input.authType??'oauth';if(!['oauth','bearer'].includes(authType))throw new ConnectorError('Choose OAuth or bearer token authentication.');
   const result={name:input.name.trim(),url,authType};
   if(input.catalogId!==undefined){if(typeof input.catalogId!=='string'||!input.catalogId.trim()||input.catalogId.length>64||/[\x00-\x1f]/.test(input.catalogId))throw new ConnectorError('Invalid connector catalog ID.');result.catalogId=input.catalogId.trim()}
@@ -69,16 +69,17 @@ class ConnectorService {
    if(previous)await this.cleanup(previous);
    if(row.catalogId==='arxiv'){
     if(!isBundledArxiv(row))throw new ConnectorError('The bundled arXiv connector requires its original API endpoint. Add a custom connector for a different server.');
-    const bundled=await require('./arxiv.cjs').createArxivSession({signal:controller.signal,fetchImpl:this.fetchImpl});Object.assign(session,{client:bundled.client,bundledClose:bundled.close});
+    const bundled=await require('./arxiv.cjs').createArxivSession({signal:controller.signal,fetchImpl:this.fetchImpl});Object.assign(session,{client:bundled.client,bundledClose:bundled.close,prepareSend:bundled.prepareSend});
     const listed=await bundled.client.listTools(undefined,{signal:controller.signal,timeout:this.requestTimeoutMs});controller.signal.throwIfAborted();
     const tools=this.normalizeTools(listed.tools,row.tools);if(JSON.stringify(row.tools)!==JSON.stringify(tools))row.revision++;row.tools=tools;row.status='connected';delete row.error;this.commit();return clone(row);
    }
-   if(row.catalogId==='gmail'){
-    if(!isBundledGmail(row))throw new ConnectorError('The bundled Gmail connector requires its original Google API endpoint.');
+   if(LEGACY_GOOGLE[row.catalogId]){
+    const legacy=LEGACY_GOOGLE[row.catalogId],api=getCatalogEntry(row.catalogId).url;
+    if(!isBundledGoogle(row))throw new ConnectorError('The bundled Google connector requires its original Google API endpoint.');
     const secrets=new SecretStore(this.credentials,id),secret=await secrets.get('clientSecret'),tokens=await secrets.get('tokens'),changes={};
-    // One-way migration only for the exact trusted Gmail preset and registered client.
-    if(secret?.url===LEGACY_GMAIL&&secret.clientId===row.clientId&&(!secret.issuer||secret.issuer==='https://accounts.google.com')&&(!secret.tokenEndpoint||secret.tokenEndpoint==='https://oauth2.googleapis.com/token'))changes.clientSecret={...secret,url:GMAIL_API};
-    if(tokens?.resourceUrl===LEGACY_GMAIL)changes.tokens=changes.clientSecret&&tokens.issuer==='https://accounts.google.com'?{...tokens,resourceUrl:GMAIL_API}:undefined;
+    // One-way migration only for the exact trusted Google preset and registered client.
+    if(secret?.url===legacy&&secret.clientId===row.clientId&&(!secret.issuer||secret.issuer==='https://accounts.google.com')&&(!secret.tokenEndpoint||secret.tokenEndpoint==='https://oauth2.googleapis.com/token'))changes.clientSecret={...secret,url:api};
+    if(tokens?.resourceUrl===legacy)changes.tokens=changes.clientSecret&&tokens.issuer==='https://accounts.google.com'?{...tokens,resourceUrl:api}:undefined;
     if(Object.keys(changes).length)await secrets.transaction(changes,()=>{controller.signal.throwIfAborted();this.commit()});
    }
    const localHttp=this.allowLoopbackHttp&&new URL(row.url).protocol==='http:';
@@ -86,9 +87,10 @@ class ConnectorService {
    const safeFetch=createSafeFetch({signal:controller.signal,allowLoopbackHttp:localHttp,fetchImpl:this.fetchImpl,timeoutMs:this.requestTimeoutMs,credentialOrigin:new URL(row.url).origin,tokenEndpoint:()=>provider.discovery?.authorizationServerMetadata?.token_endpoint});
    await provider.prepare(safeFetch);
    await require('./google-auth.cjs').prepareGoogleAuthorization({row,provider,fetchImpl:safeFetch,signal:controller.signal});
-   if(isBundledGmail(row)){
-    const {gmailAccessToken}=require('./google-auth.cjs');
-    const bundled=await require('./gmail.cjs').createGmailSession({signal:controller.signal,fetchImpl:this.fetchImpl,getToken:force=>gmailAccessToken(provider,this.fetchImpl,force)});Object.assign(session,{client:bundled.client,bundledClose:bundled.close});
+   if(isBundledGoogle(row)){
+    const {googleAccessToken}=require('./google-auth.cjs');
+    const create=row.catalogId==='gmail'?require('./gmail.cjs').createGmailSession:require('./google-workspace.cjs').createWorkspaceSession;
+    const bundled=await create({catalogId:row.catalogId,signal:controller.signal,fetchImpl:this.fetchImpl,getToken:force=>googleAccessToken(provider,this.fetchImpl,force)});Object.assign(session,{client:bundled.client,bundledClose:bundled.close,prepareSend:bundled.prepareSend});
     await bundled.verifyAccess();const listed=await bundled.client.listTools(undefined,{signal:controller.signal,timeout:this.requestTimeoutMs});controller.signal.throwIfAborted();
     const tools=this.normalizeTools(listed.tools,row.tools);if(JSON.stringify(row.tools)!==JSON.stringify(tools))row.revision++;row.tools=tools;row.status='connected';delete row.error;this.commit();return clone(row);
    }
@@ -107,6 +109,7 @@ class ConnectorService {
  async disconnect(id){const row=this.get(id);const session=this.sessions.get(id);this.sessions.delete(id);row.status='disconnected';delete row.error;this.emit();if(session)await this.cleanup(session);return clone(row)}
  async remove(id){const row=this.get(id);if(this.locks.has(id))throw new ConnectorError('Connector is busy.');this.locks.add(id);try{await this.disconnect(id);const secrets=new SecretStore(this.credentials,id);await secrets.transaction({tokens:undefined,client:undefined,token:undefined,clientSecret:undefined},()=>{this.rows=this.rows.filter(r=>r!==row);this.commit()})}finally{this.locks.delete(id)}}
  async setTools({id,names}){const row=this.get(id);if(busy(row)||this.locks.has(id))throw new ConnectorError('Connector is busy.');if(!Array.isArray(names)||names.length>256||names.some(name=>!row.tools.some(t=>t.name===name)))throw new ConnectorError('Unknown connector tool.');const chosen=new Set(names);let changed=false;for(const tool of row.tools){const enabled=chosen.has(tool.name);if(tool.enabled!==enabled){tool.enabled=enabled;changed=true}}if(changed){row.revision++;this.commit()}return clone(row)}
+ async prepareGmailSend(id,draftId,{signal,expectedRevision}={}){const row=this.get(id),session=this.sessions.get(id);if(!isBundledGmail(row)||row.status!=='connected'||!session?.prepareSend||row.revision!==expectedRevision||!row.tools.some(t=>t.name==='send_draft'&&t.enabled))throw new ConnectorError('Gmail sending is not enabled or its tools changed.');const prepared=await session.prepareSend(draftId,signal);if(this.sessions.get(id)!==session||row.revision!==expectedRevision)throw new ConnectorError('Gmail tools changed during draft review.');return prepared;}
  async callTool(id,name,args,{signal,expectedRevision}={}){const row=this.get(id),session=this.sessions.get(id);if(row.status!=='connected'||!session)throw new ConnectorError('Connector is disconnected. Reconnect before using its tools.');if(expectedRevision!==row.revision)throw new ConnectorError('Connector tools changed. Review the current tools and try again.');const tool=row.tools.find(t=>t.name===name);if(!tool?.enabled)throw new ConnectorError('Connector tool is not enabled.');boundedJSON(args,128*1024,'Tool arguments');if(!await validateToolArguments(tool.inputSchema,args,{signal:AbortSignal.any([session.controller.signal,signal].filter(Boolean))}))throw new ConnectorError('Tool arguments do not match the connector schema.');if(this.sessions.get(id)!==session||row.revision!==expectedRevision||!tool.enabled)throw new ConnectorError('Connector tools changed. Review the current tools and try again.');
   try{const combined=AbortSignal.any([session.controller.signal,signal].filter(Boolean));combined.throwIfAborted();const result=await session.client.callTool({name,arguments:args},{signal:combined,timeout:this.requestTimeoutMs,toolDefinition:{name:tool.name,inputSchema:tool.inputSchema}});if(this.sessions.get(id)!==session||row.revision!==expectedRevision)throw new ConnectorError('Connector changed during the tool request.');boundedJSON(result,2*1024*1024,'Tool result');if(tool.outputSchema&&!result.isError){if(result.structuredContent===undefined||!await validateToolArguments(tool.outputSchema,result.structuredContent,{signal:combined}))throw new ConnectorError('Connector tool output does not match its declared schema.')}if(this.sessions.get(id)!==session||row.revision!==expectedRevision)throw new ConnectorError('Connector changed during the tool request.');return result}catch(error){const safe=session.controller.signal.aborted||signal?.aborted?new ConnectorError('Connector request cancelled or disconnected.'):safeError(error);if(error instanceof UnauthorizedError||/expired|authorization/.test(safe.message)){if(this.sessions.get(id)===session){await this.disconnect(id);row.status='error';row.error=safe.message;this.emit()}}throw safe}
  }

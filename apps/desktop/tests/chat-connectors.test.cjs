@@ -34,3 +34,13 @@ test('a selected connector with no enabled tools stops before model execution an
  await assert.rejects(host.sendMessage({conversationId:conversation.id,text:'Find research',connectorIds:['remote-a']}),/Research.*no tools enabled/);
  assert.equal(modelCalls,0);assert.equal(host.conversation(conversation.id).messages.length,0);assert.equal(host.state.drafts[conversation.id].text,'Find research');
 });
+
+test('Gmail sending previews actual mail, requires per-send approval, and does not send on denial',async t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'zq-chat-send-'));const {service,row,calls}=fixture();row.catalogId='gmail';row.url='https://gmail.googleapis.com/gmail/v1';row.tools=[{name:'send_draft',title:'Send Gmail draft',inputSchema:{type:'object',properties:{draftId:{type:'string'}},required:['draftId'],additionalProperties:false},enabled:true,readOnly:false}];
+ service.prepareGmailSend=async()=>({detail:'To: friend@example.test\nSubject: Poem\n\nHello friend',arguments:{draftId:'draft1',reviewToken:'private-review'}});
+ const provider={supportsLocalTools:async()=>true,async streamChat({localTools,onLocalTool,onDelta}){await onLocalTool({name:localTools.find(t=>t.name.startsWith('mcp_')).name,arguments:{draftId:'draft1'}});onDelta({content:'Done'})}};
+ const host=new ChatService({directory:dir,provider,connectors:service});t.after(()=>{host.shutdown();fs.rmSync(dir,{recursive:true,force:true})});const conn=host.saveConnection({provider:'ollama',baseUrl:'http://localhost:11434',name:'Test'}),c=host.createConversation({connectionId:conn.id,model:'test'});
+ await host.sendMessage({conversationId:c.id,text:'Send it',connectorIds:['remote-a']});await until(()=>host.conversation(c.id).messages.at(-1)?.interactions?.length);let card=host.conversation(c.id).messages.at(-1).interactions[0];assert.equal(calls.length,0);assert.match(card.detail,/friend@example.test/);assert.equal(card.onceOnly,true);assert.throws(()=>host.respondToInteraction({conversationId:c.id,id:card.id,decision:'chat'}),/once/i);
+ host.respondToInteraction({conversationId:c.id,id:card.id,decision:'once'});await until(()=>!host.runs.size);assert.equal(calls.length,1);assert.equal(calls[0].args.reviewToken,'private-review');
+ await host.sendMessage({conversationId:c.id,text:'Send another'});await until(()=>host.conversation(c.id).messages.at(-1)?.interactions?.length);card=host.conversation(c.id).messages.at(-1).interactions[0];host.respondToInteraction({conversationId:c.id,id:card.id,decision:'deny'});await tick();assert.equal(calls.length,1);
+});
