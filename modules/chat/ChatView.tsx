@@ -5,7 +5,7 @@ import ChatSources from './ChatSources'
 import {messageSources,withoutSourceAppendix} from './chat-sources'
 import { useHost } from '@zq/module-api'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowUp, ArrowDown, CaretUp, CaretDown, X, CaretRight, MagnifyingGlass, Stop, UploadSimple, ListPlus } from '@phosphor-icons/react'
+import { ArrowUp, ArrowDown, CaretUp, CaretDown, X, CaretRight, MagnifyingGlass, Stop, UploadSimple, ListPlus, WarningCircle } from '@phosphor-icons/react'
 import { Button, VoiceControls } from '@zq/ui'
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@zq/ui'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@zq/ui'
@@ -118,7 +118,7 @@ export default function ChatView({chat,notes,closing,settings,prepareNotes}:{pre
   {!empty&&<div className="chat-messages" ref={scroller} onScroll={scrollChanged}>
    <div className="chat-thread" ref={motion.thread}>{c!.messages.map(m=><ChatMessageActions key={m.id} message={m} chat={chat} choice={choice} disabled={busy||pending||closing||readOnly} notes={notes} settings={settings} matched={finding&&matches.includes(m.id)} currentMatch={finding&&currentMatch===m.id}>
     {m.role==='assistant'&&m.status==='streaming'&&!m.content&&<ThinkingMark/>}
-    {m.role==='assistant'&&['stopped','interrupted','error'].includes(m.status)&&<ControlTooltip content={m.status==='stopped'?'Generation was stopped before completion. Use the message actions to generate another response.':m.status==='interrupted'?'The response was interrupted before it finished. Use the message actions to retry.':'The response could not finish. Review the error details and use the message actions to retry.'}><div className="chat-response-status" tabIndex={0}>{m.status==='stopped'?'Stopped':m.status==='interrupted'?'Interrupted':'Couldn’t finish'}</div></ControlTooltip>}
+    {m.role==='assistant'&&m.status==='error'?<div className="chat-response-error" role="alert"><WarningCircle size={18} aria-hidden="true"/><div><strong>Response incomplete</strong><p>{m.error||'The response stopped before it finished.'}</p>{(m.content||m.toolActivity?.length)&&<p className="chat-response-error-hint">The content below is partial. Completed tool steps do not mean the whole request finished.</p>}</div></div>:m.role==='assistant'&&['stopped','interrupted','error'].includes(m.status)&&<ControlTooltip content={m.status==='stopped'?'Generation was stopped before completion. Use the message actions to generate another response.':m.status==='interrupted'?'The response was interrupted before it finished. Use the message actions to retry.':'The response could not finish. Review the error details and use the message actions to retry.'}><div className="chat-response-status" tabIndex={0}>{m.status==='stopped'?'Stopped':m.status==='interrupted'?'Interrupted':'Couldn’t finish'}</div></ControlTooltip>}
     {(!!m.attachments?.length||m.context.length>0)&&<div className="attachment-tray sent-attachments">{m.attachments?.map(a=><AttachmentCard key={a.id} item={a} onPreview={()=>setPreview({id:a.id,name:a.name})}/>)}{m.context.map(n=><AttachmentCard key={n.id} item={{id:n.id,name:n.title||'Untitled',kind:'note',size:0,preview:''}} onPreview={()=>setPreview({id:`${m.id}:${n.id}`,name:n.title||'Untitled',text:n.body})}/>)}</div>}
     {m.thinking&&<Collapsible className="chat-thinking"><CollapsibleTrigger tooltip="Show or hide the model’s thinking details" className="chat-thinking-trigger"><CaretRight size={12}/><span className={m.status==='streaming'&&!m.content?'chat-thinking-active':''}>{m.status==='streaming'&&!m.content?'Thinking…':'Thinking'}</span></CollapsibleTrigger><CollapsibleContent><ChatMarkdown content={m.thinking}/></CollapsibleContent></Collapsible>}
     {m.role==='assistant'&&<ChatSkillActivity skills={m.skillUsage} closing={closing}/>}
@@ -126,7 +126,7 @@ export default function ChatView({chat,notes,closing,settings,prepareNotes}:{pre
     {m.role==='user'?<div className="chat-user-text">{m.content}</div>:m.content?<ChatMarkdown content={withoutSourceAppendix(m.content,messageSources(m).sources)} sources={messageSources(m).sources} onSourceOpen={(source,origin)=>chat.openSources(c!.id,m,source.url,origin)}/>:null}
     {m.role==='assistant'&&<ChatSources message={m} closing={closing} onOpen={()=>chat.openSources(c!.id,m)}/>}
     {m.interactions?.map(interaction=><ChatInteraction key={`${c!.id}:${interaction.id}`} interaction={interaction} conversationId={c!.id} disabled={closing||readOnly}/>)}
-    {m.error&&<p className="chat-error" role="alert">{m.error}</p>}
+    {m.error&&m.role!=='assistant'&&<p className="chat-error" role="alert">{m.error}</p>}
    </ChatMessageActions>)}</div>
   </div>}
   <div className="chat-compose-region">

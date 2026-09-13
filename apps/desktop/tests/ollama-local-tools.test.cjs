@@ -36,7 +36,7 @@ test('advertises native tools and continues with complete calls, thinking, conte
     { role: 'assistant', content: 'Creating. ', thinking: 'Plan', tool_calls: [nativeCall] },
     { role: 'tool', tool_name: 'create_document', content: '{"file":"document.docx"}' },
   ]);
-  assert.equal(deltas.map(delta => delta.content).join(''), 'Creating. Ready.');
+  assert.equal(deltas.map(delta => delta.content).join(''), 'Creating. \n\nReady.');
   assert.equal(usages.at(-1).inputTokens, 10);
   assert.equal(usages.at(-1).outputTokens, 4);
 });
@@ -65,7 +65,7 @@ for (const [name, chunks, code] of [
   ['invalid final JSON', [line({ tool_calls: [call()] }), '{"done":'], 'INVALID_RESPONSE'],
   ['token limit completion', [line({ tool_calls: [call()] }), '{"done":true,"done_reason":"length"}\n'], 'INVALID_RESPONSE'],
   ['arguments over 120 KiB', [line({ tool_calls: [call('a'.repeat(120 * 1024))] }), done], 'RESPONSE_LIMIT'],
-  ['five parallel calls', [line({ tool_calls: Array.from({ length: 5 }, () => call()) }), done], 'TOOL_LIMIT'],
+  ['seventeen parallel calls', [line({ tool_calls: Array.from({ length: 17 }, () => call()) }), done], 'TOOL_LIMIT'],
 ]) test(`never dispatches ${name}`, async () => {
   let dispatched = 0;
   const p = createOllamaProvider({ fetchImpl: async () => response(chunks) });
@@ -73,11 +73,11 @@ for (const [name, chunks, code] of [
   assert.equal(dispatched, 0);
 });
 
-test('stops a repeating model after four calls across four tool rounds', async () => {
+test('stops a repeating model after sixteen calls across sixteen tool rounds', async () => {
   let calls = 0, requests = 0;
   const p = createOllamaProvider({ fetchImpl: async () => { requests++; return response([line({ tool_calls: [call()] }), done]); } });
   await assert.rejects(p.streamChat(request({ onLocalTool: async () => { calls++; return {}; } })), { code: 'TOOL_LIMIT' });
-  assert.equal(calls, 4); assert.equal(requests, 5);
+  assert.equal(calls, 16); assert.equal(requests, 17);
 });
 
 test('executes parallel calls in order and continues after a recoverable tool error', async () => {
@@ -208,4 +208,15 @@ test('MCP selections can advertise more than sixteen tools with full description
  const p=createOllamaProvider({fetchImpl:async(_url,options)=>{body=JSON.parse(options.body);return response([done])}});
  await p.streamChat(request({localTools:tools}));assert.equal(body.tools.length,20);assert.equal(body.tools[0].function.description,tools[0].description);
  await assert.rejects(p.streamChat(request({localTools:Array.from({length:65},(_,i)=>({...tools[1],name:'mcp_'+i}))})),{code:'INVALID_REQUEST'});
+});
+
+test('a calendar workflow can complete more than four calls and separate round text',async()=>{
+ let calls=0,requests=0;const deltas=[];
+ const p=createOllamaProvider({fetchImpl:async()=>++requests<=6?response([line({content:'Checking.',tool_calls:[call()]}),done]):response([line({content:'Your calendar is clear.'}),done])});
+ await p.streamChat(request({onLocalTool:async()=>{calls++;return {}},onDelta:d=>deltas.push(d.content)}));assert.equal(calls,6);assert.ok(deltas.join('').includes('Checking.\n\nYour calendar'));
+});
+test('exhausted tool budget requests a final summary without tools and marks the response incomplete',async()=>{
+ let requests=0,calls=0;const deltas=[];
+ const p=createOllamaProvider({fetchImpl:async(_,options)=>{const body=JSON.parse(options.body);if(++requests<=16)return response([line({tool_calls:[call()]}),done]);assert.equal(body.tools,undefined);assert.match(JSON.stringify(body.messages),/summarize.*results/i);return response([line({content:'I checked the primary calendar; the rest remain unchecked.'}),done]);}});
+ await assert.rejects(p.streamChat(request({onLocalTool:async()=>{calls++;return {}},onDelta:d=>deltas.push(d.content)})),{code:'TOOL_LIMIT'});assert.equal(calls,16);assert.equal(requests,17);assert.match(deltas.join(''),/remain unchecked/);
 });

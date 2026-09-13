@@ -43,3 +43,9 @@
 .chat-interaction-completed > [data-slot="collapsible-content"] > .chat-interaction-question { margin-top: 6px; }
 
 .chat-interaction-detail { max-height: 340px; overflow-y: auto; }
+
+.chat-response-error { display: flex; gap: 9px; padding: 12px 14px; margin: 0 0 16px; border: 1px solid color-mix(in srgb, var(--danger, #c54840) 35%, var(--line)); border-radius: 9px; background: color-mix(in srgb, var(--danger, #c54840) 6%, var(--panel)); font-size: 12px; line-height: 1.6; }
+.chat-response-error > svg { flex-shrink: 0; color: var(--danger, #c54840); margin-top: 2px; }
+.chat-response-error strong { font-weight: 600; }
+.chat-response-error p { margin: 4px 0 0; overflow-wrap: anywhere; }
+.chat-response-error-hint { color: var(--muted); }

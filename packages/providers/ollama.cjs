@@ -5,7 +5,8 @@ const WIRE_LIMIT = 4 * 1024 * 1024;
 const REQUEST_LIMIT = 12 * 1024 * 1024;
 const MODEL_LIMIT = 1024 * 1024;
 const TOOL_JSON_LIMIT = 120 * 1024;
-const TOOL_CALL_LIMIT = 4;
+const TOOL_CALL_LIMIT = 16;
+const TOOL_LIMIT_MESSAGE = "Reached this response’s limit of 16 tool actions. Results may be incomplete. Ask me to continue from these results.";
 
 function failure(code, message) { return Object.assign(new Error(message), { code }); }
 function object(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
@@ -191,16 +192,18 @@ function createOllamaProvider({ fetchImpl = globalThis.fetch, idleMs = 90000, to
     const allowedNames = new Set(tools?.map(tool => tool.function.name));
     const history = messages.map(({ role, content, images }) => ({ role, content, ...(images?.length ? { images: [...images] } : {}) }));
     const telemetry=createTelemetry({onUsage,onModel});
-    let textBytes = 0, wireBytes = 0, executedCalls = 0;
+    let textBytes = 0, wireBytes = 0, executedCalls = 0, hasVisibleContent = false;
     // One scope spans network rounds AND execution, so callbacks cannot evade
     // the deadline or schedule another dispatch after cancellation.
     const scope = hasTools ? requestScope(signal, idleMs, totalMs, onLocalTool?.userWait) : undefined;
     try {
       while (true) {
         scope?.check();
-        const body = JSON.stringify({ model, messages: history, stream: true, options: { num_predict: hasTools ? 8192 : 2048 }, ...(hasTools ? { tools } : {}) });
+        const summarize = hasTools && executedCalls >= TOOL_CALL_LIMIT;
+        const roundHistory = summarize ? [...history,{role:'system',content:'The tool budget for this response is exhausted. Do not call more tools. Summarize the results already obtained, clearly state what remains unchecked or failed, and do not claim the entire request is complete.'}] : history;
+        const body = JSON.stringify({ model, messages: roundHistory, stream: true, options: { num_predict: hasTools ? 8192 : 2048 }, ...(hasTools && !summarize ? { tools } : {}) });
         if (Buffer.byteLength(body, 'utf8') > REQUEST_LIMIT) throw failure('INVALID_REQUEST', 'Chat history exceeded the request size limit.');
-        let pending = '', complete = false, doneReason;
+        let pending = '', complete = false, doneReason, firstContent = true;
         const assistant = { role: 'assistant', content: '', thinking: '', tool_calls: [] };
         const record = (line) => {
           scope?.check();
@@ -218,7 +221,7 @@ function createOllamaProvider({ fetchImpl = globalThis.fetch, idleMs = 90000, to
             throw failure('INVALID_RESPONSE', 'Ollama returned an invalid chat record.');
           }
           if (payload.message?.tool_calls) {
-            if (executedCalls + assistant.tool_calls.length + payload.message.tool_calls.length > TOOL_CALL_LIMIT) throw failure('TOOL_LIMIT', 'Ollama exceeded four local tool calls.');
+            if (executedCalls + assistant.tool_calls.length + payload.message.tool_calls.length > TOOL_CALL_LIMIT) throw failure('TOOL_LIMIT', TOOL_LIMIT_MESSAGE);
             for (const call of payload.message.tool_calls) {
               if (!object(call) || (call.type !== undefined && call.type !== 'function') || !object(call.function) ||
                 !allowedNames.has(call.function.name) || !object(call.function.arguments)) {
@@ -233,6 +236,8 @@ function createOllamaProvider({ fetchImpl = globalThis.fetch, idleMs = 90000, to
           textBytes += Buffer.byteLength(delta.content, 'utf8') + Buffer.byteLength(delta.thinking, 'utf8');
           if (textBytes > TEXT_LIMIT) throw failure('RESPONSE_LIMIT', 'Ollama generated more than 2 MiB of text.');
           if (hasTools) { assistant.content += delta.content; assistant.thinking += delta.thinking; }
+          if (delta.content && firstContent) { firstContent = false; if (hasVisibleContent) { delta.content = '\n\n' + delta.content; textBytes += 2; } hasVisibleContent = true; }
+          if (textBytes > TEXT_LIMIT) throw failure('RESPONSE_LIMIT', 'Ollama generated more than 2 MiB of text.');
           if (delta.content || delta.thinking) onDelta(delta);
           if (signal?.aborted) throw failure('ABORTED', 'Ollama request was stopped.');
           complete = payload.done;
@@ -253,7 +258,7 @@ function createOllamaProvider({ fetchImpl = globalThis.fetch, idleMs = 90000, to
           },
         });
         if (!complete) throw failure('EARLY_EOF', 'Ollama closed the response before completion.');
-        if (!assistant.tool_calls.length) return;
+        if (!assistant.tool_calls.length) { if(summarize) throw failure('TOOL_LIMIT',TOOL_LIMIT_MESSAGE); return; }
         if (doneReason !== undefined && doneReason !== 'stop') throw failure('INVALID_RESPONSE', 'Ollama did not finish its local tool calls successfully.');
         scope.check();
         history.push(assistant);
