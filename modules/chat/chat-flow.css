@@ -32,3 +32,12 @@
 .chat-interaction > header > button ,
 
 .chat-interaction > header >.zq-tooltip-disabled>button { width: 24px; height: 24px; margin: -3px -4px -3px 0; }
+
+.chat-interaction-completed { border: 0; padding: 0; background: transparent; margin: 10px 0; }
+.chat-approval-summary { display: inline-flex; align-items: center; gap: 7px; min-height: 28px; padding: 3px 0; color: var(--muted); text-align: left; border-radius: 4px; }
+.chat-approval-summary:hover { color: var(--text); }
+.chat-approval-summary:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 3px; }
+.chat-interaction > header > .chat-approval-summary { width: auto; height: auto; margin: 0; }
+.chat-interaction > header .chat-approval-summary span { margin: 0; font-size: 11px; }
+.chat-approval-summary[data-state="open"] .chat-approval-chevron { transform: rotate(90deg); }
+.chat-interaction-completed > [data-slot="collapsible-content"] > .chat-interaction-question { margin-top: 6px; }
