@@ -3,7 +3,7 @@ class ConnectorError extends Error {}
 function safeError(error) {
  if(error instanceof ConnectorError)return error;
  if(error?.name==='AbortError'||error?.name==='TimeoutError')return new ConnectorError('Connector request cancelled or timed out. Reconnect and try again.');
- if(/Unauthorized|OAuth|Issuer|Registration|InsufficientScope/.test(error?.constructor?.name||''))return new ConnectorError('Connector authorization failed or expired. Reconnect; check the public client ID and provider registration requirements.');
+ if(/Unauthorized|OAuth|Issuer|Registration|InsufficientScope/.test(error?.constructor?.name||''))return new ConnectorError('Connector authorization failed or expired. Reconnect; check the token, client ID and provider registration requirements.');
  return new ConnectorError('Connector request failed. Check the server URL and connection, then reconnect.');
 }
 function validUrl(value,allowLoopbackHttp=false,allowOAuthParams=false) {
@@ -20,9 +20,17 @@ function boundedJSON(value,limit,label='Connector data') {
  if(!encoded||Buffer.byteLength(encoded)>limit)throw new ConnectorError(`${label} exceeds the supported size limit.`);
  return encoded;
 }
-function createSafeFetch({signal,allowLoopbackHttp=false,fetchImpl=fetch,timeoutMs=60000,maxBytes=2*1024*1024}) {
+function createSafeFetch({signal,allowLoopbackHttp=false,fetchImpl=fetch,timeoutMs=60000,maxBytes=2*1024*1024,credentialOrigin,tokenEndpoint=()=>undefined}) {
  return async(input,init={})=>{
   const url=validUrl(input instanceof Request?input.url:String(input),allowLoopbackHttp);
+  if(credentialOrigin){
+   const headers=new Headers(init.headers??(input instanceof Request?input.headers:undefined)),authorization=headers.get('authorization');
+   if(authorization&&/^Bearer /i.test(authorization)&&url.origin!==credentialOrigin)throw new ConnectorError('Connector credential origin does not match its saved endpoint.');
+   const endpoint=tokenEndpoint();const tokenRequest=endpoint&&url.href===new URL(endpoint).href;
+   if(authorization&&!/^Bearer /i.test(authorization)&&!tokenRequest)throw new ConnectorError('OAuth credentials can only be sent to the discovered token endpoint.');
+   const body=init.body;
+   if(body instanceof URLSearchParams&&['client_secret','refresh_token','code'].some(key=>body.has(key))&&!tokenRequest)throw new ConnectorError('OAuth credentials can only be sent to the discovered token endpoint.');
+  }
   const requestSignal=AbortSignal.any([signal,init.signal,...(input instanceof Request?[input.signal]:[]),AbortSignal.timeout(timeoutMs)].filter(Boolean));
   const response=await fetchImpl(url,{...init,signal:requestSignal,redirect:'error',credentials:'omit'});
   if(Number(response.headers.get('content-length'))>maxBytes){await response.body?.cancel();throw new ConnectorError('Connector response exceeds the supported size limit.')}
@@ -38,6 +46,21 @@ class SecretStore {
  constructor(credentials,id){this.credentials=credentials;this.prefix=`mcp-${id}`;this.queue=Promise.resolve()}
  key(slot){return `${this.prefix}-${slot}`}
  async get(slot){const raw=await this.credentials.get(this.key(slot));if(!raw)return undefined;try{const m=JSON.parse(Buffer.from(raw,'base64url').toString());if(!/^[a-f0-9-]{36}$/.test(m.g)||!Number.isInteger(m.n)||m.n<1||m.n>32)throw Error();let text='';for(let i=0;i<m.n;i++){const chunk=await this.credentials.get(`${this.key(slot)}-${m.g}-${i}`);if(typeof chunk!=='string'||chunk.length>7800)throw Error();text+=chunk}return JSON.parse(Buffer.from(text,'base64url').toString())}catch{throw new ConnectorError('Saved connector credentials could not be read. Remove and reconnect the server.')}}
+ transaction(changes,commit){const operation=this.queue.then(async()=>{
+  const staged=[];
+  try{
+   for(const [slot,value] of Object.entries(changes)){
+    const old=await this.credentials.get(this.key(slot));const entry={slot,old};staged.push(entry);
+    if(value!==undefined){const encoded=Buffer.from(boundedJSON(value,128*1024,'Connector credentials')).toString('base64url');entry.manifest={g:randomUUID(),n:Math.ceil(encoded.length/7800)};for(let i=0;i<entry.manifest.n;i++)await this.credentials.set(`${this.key(slot)}-${entry.manifest.g}-${i}`,encoded.slice(i*7800,(i+1)*7800))}
+   }
+   for(const entry of staged){entry.touched=true;if(entry.manifest)await this.credentials.set(this.key(entry.slot),Buffer.from(JSON.stringify(entry.manifest)).toString('base64url'));else await this.credentials.delete(this.key(entry.slot))}
+   await commit();
+  }catch(error){
+   let failed=false;for(const entry of staged){try{if(entry.touched){if(entry.old)await this.credentials.set(this.key(entry.slot),entry.old);else await this.credentials.delete(this.key(entry.slot))}await this.cleanup(entry.slot,entry.manifest)}catch{failed=true}}
+   if(failed)throw new ConnectorError('Credential rollback failed. Check Keychain access before reconnecting.');throw error;
+  }
+  for(const entry of staged)if(entry.old){try{await this.cleanup(entry.slot,JSON.parse(Buffer.from(entry.old,'base64url').toString()))}catch{/* Orphaned chunks contain no active credential manifest. */}}
+ });this.queue=operation.catch(()=>{});return operation}
  async manifest(slot){const raw=await this.credentials.get(this.key(slot));if(!raw)return;try{return JSON.parse(Buffer.from(raw,'base64url').toString())}catch{return}}
  async cleanup(slot,m){if(m&&/^[a-f0-9-]{36}$/.test(m.g)&&Number.isInteger(m.n)&&m.n>0&&m.n<=32)for(let i=0;i<m.n;i++)await this.credentials.delete(`${this.key(slot)}-${m.g}-${i}`)}
  set(slot,value){const operation=this.queue.then(async()=>{const text=Buffer.from(boundedJSON(value,128*1024,'OAuth credentials')).toString('base64url');const old=await this.manifest(slot),m={g:randomUUID(),n:Math.ceil(text.length/7800)};try{for(let i=0;i<m.n;i++)await this.credentials.set(`${this.key(slot)}-${m.g}-${i}`,text.slice(i*7800,(i+1)*7800));await this.credentials.set(this.key(slot),Buffer.from(JSON.stringify(m)).toString('base64url'))}catch(error){await this.cleanup(slot,m).catch(()=>{});throw error}await this.cleanup(slot,old).catch(()=>{})});this.queue=operation.catch(()=>{});return operation}

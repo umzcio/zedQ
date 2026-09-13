@@ -1,6 +1,6 @@
 {
   "id": "zq.chat",
-  "version": "1.17.0",
+  "version": "1.18.0",
   "apiVersion": 1,
   "title": "Chat",
   "view": "Chat",
@@ -10,6 +10,7 @@
     "chat",
     "connectors",
     "connectors.v1",
+    "connectors.catalog.v1",
     "attachments",
     "commands",
     "providers.v1",

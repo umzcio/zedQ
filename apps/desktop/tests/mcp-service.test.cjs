@@ -22,16 +22,16 @@ test('metadata persists atomically, public snapshots cannot mutate service, cred
 });
 const http=require('node:http');
 const crypto=require('node:crypto');
-async function fixture(t,{oauth=false,registration=true,metadataUrl=false}={}) {
+async function fixture(t,{oauth=false,registration=true,metadataUrl=false,authMethods=['none']}={}) {
  const state={calls:[],tokens:0,opens:0,access:'secret-access',rejectAccess:false};
  const server=http.createServer(async(req,res)=>{
   const url=new URL(req.url,state.origin);let bytes='';for await(const chunk of req)bytes+=chunk;
   const json=(value,status=200,headers={})=>{res.writeHead(status,{'Content-Type':'application/json',...headers});res.end(JSON.stringify(value))};
   if(url.pathname.startsWith('/.well-known/oauth-protected-resource'))return json({resource:state.origin+'/mcp',authorization_servers:[state.origin]});
-  if(url.pathname==='/.well-known/oauth-authorization-server')return json({issuer:state.origin,...(metadataUrl?{client_id_metadata_document_supported:true}:{}),authorization_endpoint:state.origin+'/authorize',token_endpoint:state.origin+'/token',...(registration?{registration_endpoint:state.origin+'/register'}:{}),response_types_supported:['code'],grant_types_supported:['authorization_code','refresh_token'],token_endpoint_auth_methods_supported:['none'],code_challenge_methods_supported:['S256'],authorization_response_iss_parameter_supported:true});
+  if(url.pathname==='/.well-known/oauth-authorization-server')return json({issuer:state.origin,...(metadataUrl?{client_id_metadata_document_supported:true}:{}),authorization_endpoint:state.origin+'/authorize',token_endpoint:state.origin+'/token',...(registration?{registration_endpoint:state.origin+'/register'}:{}),response_types_supported:['code'],grant_types_supported:['authorization_code','refresh_token'],token_endpoint_auth_methods_supported:authMethods,code_challenge_methods_supported:['S256'],authorization_response_iss_parameter_supported:true});
   if(url.pathname==='/register'){state.registration=JSON.parse(bytes);return json({...state.registration,client_id:'registered-public'},201)}
   if(url.pathname==='/token'){
-   state.tokens++;const params=new URLSearchParams(bytes);state.tokenParams=params;
+   state.tokens++;const params=new URLSearchParams(bytes);state.tokenParams=params;state.tokenAuthorization=req.headers.authorization;
    if(params.get('grant_type')==='authorization_code'){
     assert.equal(params.get('code'),'only-code');assert.equal(crypto.createHash('sha256').update(params.get('code_verifier')).digest('base64url'),state.authorization.searchParams.get('code_challenge'));assert.equal(params.get('redirect_uri'),state.authorization.searchParams.get('redirect_uri'));
    }
@@ -113,4 +113,57 @@ test('HTTPS client metadata URLs are used when authorization server advertises s
 
 test('modern input and output schemas are validated before results reach chat',async t=>{
  const f=await fixture(t);f.tools=[{name:'echo',inputSchema:{$schema:'https://json-schema.org/draft/2020-12/schema',type:'object',properties:{text:{type:'string'}},required:['text']},outputSchema:{type:'object',properties:{ok:{const:true}},required:['ok']}}];f.output={ok:false};const {service}=setup(t,{allowLoopbackHttp:true});await service.save({name:'Modern',url:f.origin+'/mcp'});const id=service.list()[0].id;await service.connect(id);await service.setTools({id,names:['echo']});assert.equal(service.list()[0].tools[0].outputSchema,undefined);const revision=service.list()[0].revision;await assert.rejects(service.callTool(id,'echo',{text:'hello'},{expectedRevision:revision}),/output|result|schema/i);f.output={ok:true};const result=await service.callTool(id,'echo',{text:'hello'},{expectedRevision:revision});assert.deepEqual(result.structuredContent,{ok:true});
+});
+
+const {SecretStore}=require('../electron/mcp/security.cjs');
+test('bearer credentials are write-only, preserve on edit, clear explicitly and authenticate without browser',async t=>{
+ const f=await fixture(t,{oauth:true});const {service,directory,credentials}=setup(t,{allowLoopbackHttp:true,openExternal:f.openExternal});
+ const row=await service.save({name:'Bearer',url:f.origin+'/mcp',authType:'bearer',token:f.access,catalogId:'github'});
+ assert.equal(row.hasToken,true);assert.equal(row.token,undefined);assert.equal(row.catalogId,'github');await service.connect(row.id);assert.equal(f.opens,0);assert.equal(f.tokens,0);
+ await service.disconnect(row.id);await service.save({...row,name:'Renamed'});await service.connect(row.id);assert.equal(f.opens,0);
+ assert.ok(!fs.readFileSync(path.join(directory,'mcp-connectors.json'),'utf8').includes(f.access));
+ const reopened=new ConnectorService({directory,credentials,allowLoopbackHttp:true,openExternal:async()=>{}});t.after(()=>reopened.close());assert.equal(reopened.list()[0].hasToken,true);
+ await service.disconnect(row.id);await service.save({...row,token:''});assert.equal(service.list()[0].hasToken,false);await assert.rejects(service.connect(row.id),/token/i);assert.equal(f.opens,0);
+});
+test('failed metadata save preserves every prior credential and endpoint changes revoke credentials',async t=>{
+ const {service,credentials}=setup(t);const row=await service.save({name:'Original',url:'https://old.example/mcp',authType:'bearer',token:'original-token'});const store=new SecretStore(credentials,row.id);await store.set('tokens',{access_token:'oauth-original'});await store.set('client',{client_id:'old-registration'});
+ const rename=fs.renameSync;fs.renameSync=()=>{throw Error('disk failure')};try{await assert.rejects(service.save({...row,url:'https://new.example/mcp',token:'replacement-token'}));}finally{fs.renameSync=rename}
+ assert.equal(service.list()[0].url,row.url);assert.equal((await store.get('token')).value,'original-token');assert.equal((await store.get('tokens')).access_token,'oauth-original');assert.equal((await store.get('client')).client_id,'old-registration');
+ await service.save({...row,url:'https://new.example/mcp'});assert.equal(service.list()[0].hasToken,false);assert.equal(await store.get('tokens'),undefined);assert.equal(await store.get('client'),undefined);
+});
+test('manual confidential OAuth uses the supplied secret with PKCE and never exposes it',async t=>{
+ for(const method of ['client_secret_basic','client_secret_post']){
+  const f=await fixture(t,{oauth:true,registration:false,authMethods:[method]});const {service,directory}=setup(t,{allowLoopbackHttp:true,openExternal:f.openExternal});const row=await service.save({name:'Manual OAuth',url:f.origin+'/mcp',clientId:'my-client',clientSecret:'my-private-secret'});
+  assert.equal(row.hasClientSecret,true);await service.connect(row.id);assert.equal(f.opens,1);assert.equal(f.registration,undefined);
+  if(method==='client_secret_basic')assert.equal(f.tokenAuthorization,'Basic '+Buffer.from('my-client:my-private-secret').toString('base64'));else assert.equal(f.tokenParams.get('client_secret'),'my-private-secret');
+  assert.ok(!JSON.stringify(service.list()).includes('my-private-secret'));assert.ok(!fs.readFileSync(path.join(directory,'mcp-connectors.json'),'utf8').includes('my-private-secret'));
+ }
+});
+test('fixed loopback callbacks honor registered host and report occupied ports before sign-in',async t=>{
+ const f=await fixture(t,{oauth:true,registration:false});const occupied=http.createServer();await new Promise(r=>occupied.listen(0,'127.0.0.1',r));const port=occupied.address().port;t.after(()=>occupied.close());
+ const {service}=setup(t,{allowLoopbackHttp:true,openExternal:f.openExternal});const row=await service.save({name:'Fixed',url:f.origin+'/mcp',clientId:'registered',redirectPort:port,redirectHost:'localhost'});
+ await assert.rejects(service.connect(row.id),/port.*in use|in use.*port/i);assert.equal(f.opens,0);await new Promise(r=>occupied.close(r));await service.connect(row.id);assert.equal(f.authorization.searchParams.get('redirect_uri'),`http://localhost:${port}/oauth/callback`);await service.disconnect(row.id);
+ const check=http.createServer();await new Promise((resolve,reject)=>check.once('error',reject).listen(port,'127.0.0.1',resolve));await new Promise(r=>check.close(r));
+});
+test('authentication fields reject unsupported modes and malformed secrets and callbacks',async t=>{
+ const {service}=setup(t);for(const extra of [{authType:'password'},{token:'bad\nheader'},{token:123},{clientSecret:'secret'},{redirectPort:0},{redirectPort:65536},{redirectHost:'evil.example'},{catalogId:'x'.repeat(65)}])await assert.rejects(service.save({name:'Invalid',url:'https://example.com/mcp',...extra}));
+});
+
+test('changing OAuth registration revokes grants while callback edits preserve the registered app secret',async t=>{
+ const {service,credentials}=setup(t);const row=await service.save({name:'Manual',url:'https://example.com/mcp',clientId:'first-app',clientSecret:'secret-value'});const store=new SecretStore(credentials,row.id);await store.set('tokens',{access_token:'old-grant'});
+ await service.save({...row,redirectPort:4000});assert.equal(await store.get('tokens'),undefined);assert.equal((await store.get('clientSecret')).value,'secret-value');assert.equal(service.list()[0].hasClientSecret,true);
+ await service.save({...service.list()[0],clientId:'other-app'});assert.equal(await store.get('clientSecret'),undefined);assert.equal(service.list()[0].hasClientSecret,false);
+ await service.save({...service.list()[0],authType:'bearer',token:'new-token'});assert.equal(service.list()[0].hasToken,true);assert.equal(service.list()[0].hasClientSecret,false);
+});
+test('a rejected bearer token never attempts OAuth discovery or sign-in',async t=>{
+ const f=await fixture(t,{oauth:true});const {service}=setup(t,{allowLoopbackHttp:true,openExternal:f.openExternal});const row=await service.save({name:'Bearer',url:f.origin+'/mcp',authType:'bearer',token:'wrong-token'});await assert.rejects(service.connect(row.id),/token.*rejected|token.*expired/i);assert.equal(f.opens,0);assert.equal(f.tokens,0);assert.equal(f.registration,undefined);
+});
+test('client-secret auth pins issuer and token endpoint before transmitting the secret',async t=>{
+ const {NativeOAuthProvider}=require('../electron/mcp/oauth.cjs');const {service,credentials}=setup(t);const row=await service.save({name:'Pinned',url:'https://mcp.example/mcp',clientId:'my-app',clientSecret:'pinned-secret'});const store=new SecretStore(credentials,row.id);const create=()=>new NativeOAuthProvider({row,secrets:store,signal:new AbortController().signal,openExternal:async()=>{},onAuthenticating:()=>{}});
+ const first=create();t.after(()=>first.close());await first.start();await first.saveDiscoveryState({authorizationServerUrl:'https://login.example',authorizationServerMetadata:{issuer:'https://login.example',token_endpoint:'https://login.example/token',token_endpoint_auth_methods_supported:['client_secret_post']}});first.close();
+ const second=create();t.after(()=>second.close());await second.start();await assert.rejects(second.saveDiscoveryState({authorizationServerUrl:'https://evil.example',authorizationServerMetadata:{issuer:'https://evil.example',token_endpoint:'https://evil.example/token',token_endpoint_auth_methods_supported:['client_secret_post']}}),/provider.*changed|endpoint.*changed/i);
+});
+
+test('malformed manual registration inputs produce an actionable validation error',async t=>{
+ const {service}=setup(t);await assert.rejects(service.save({name:'Invalid',url:'https://example.com/mcp',clientId:42,clientSecret:'secret'}),/registered OAuth client ID/);
 });

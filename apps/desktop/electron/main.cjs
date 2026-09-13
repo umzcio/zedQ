@@ -80,6 +80,7 @@ app.whenReady().then(async () => {
  const artifactService=()=>{if(!artifacts)throw artifactError;return artifacts};
  const credentials=require('./provider-keychain.cjs').createCredentialStore({directory,helperPath:app.isPackaged?path.join(process.resourcesPath,'native','provider-keychain'):undefined});
  try { connectors=new (require('./mcp/service.cjs').ConnectorService)({directory,credentials,allowLoopbackHttp:true,openExternal:url=>shell.openExternal(url),onChange:rows=>{if(window&&!window.isDestroyed())window.webContents.send('connectors:changed',rows)}}); } catch(error) { connectorError=error; }
+ handle('connectors:catalog',()=>require('./mcp/catalog.cjs').getCatalog());
  handle('connectors:list',()=>{if(connectorError)throw connectorError;return connectors.list()});
  for(const method of ['save','connect','disconnect','remove','setTools'])handle(`connectors:${method}`,async input=>{if(connectorError)throw connectorError;await connectors[method](input);return connectors.list()});
  try { chat = new (require('./chat-service.cjs').ChatService)({directory, artifacts, credentials, connectors, attachments, getNotes:()=>workspace.load()?.notes??[], onChange:state=>{if(window&&!window.isDestroyed())window.webContents.send('chat:changed',state)}}); } catch(error) { chatError=error; }

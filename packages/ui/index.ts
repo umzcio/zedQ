@@ -20,3 +20,4 @@ export * from './artifact-document-view'
 export * from './components/hover-card'
 
 export * from './components/tooltip'
+export * from './components/tabs'
