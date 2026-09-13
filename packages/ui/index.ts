@@ -21,3 +21,5 @@ export * from './components/hover-card'
 
 export * from './components/tooltip'
 export * from './components/tabs'
+
+export * from './components/connector-icon'
