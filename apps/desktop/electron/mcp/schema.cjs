@@ -33,6 +33,9 @@ async function validateToolArguments(schema,args,{signal,timeoutMs=2000}={}){
 if(!isMainThread&&workerData){try{
  const Ajv=require(DIALECTS.get(workerData.schema.$schema)||'ajv/dist/2020');
  const ajv=new Ajv({strict:false,strictSchema:true,validateFormats:false,allErrors:false,addUsedSchema:false});
+ // Google's MCP schemas annotate enum choices; this metadata adds no validation rule.
+ // Register only the known annotation so unknown validation keywords still fail closed.
+ ajv.addKeyword({keyword:'x-google-enum-descriptions',schemaType:'array',metaSchema:{type:'array',items:{type:'string'}}});
  const schema=structuredClone(workerData.schema);if(schema.$schema?.includes('draft-07'))schema.$schema='http://json-schema.org/draft-07/schema#';
  const validate=ajv.compile(schema);parentPort.postMessage({valid:!!validate(workerData.args)});
 }catch{parentPort.postMessage({error:true})}}

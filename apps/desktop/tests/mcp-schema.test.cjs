@@ -18,3 +18,18 @@ test('adversarial regular expressions cannot block the app process',async()=>{
  assert.equal(ticked,true);
  const controller=new AbortController();controller.abort();await assert.rejects(validateToolArguments({type:'object'},{},{signal:controller.signal}));
 });
+
+test('Google enum descriptions are annotations while enum and type validation remain enforced',async()=>{
+ const schema={type:'object',properties:{query:{type:'string'},pageSize:{type:'integer',format:'int32'},view:{$ref:'#/$defs/View'}},$defs:{View:{type:'string',enum:['THREAD_VIEW_METADATA_ONLY','THREAD_VIEW_MINIMAL'],'x-google-enum-descriptions':['Metadata only','Include snippets']}},required:['query']};
+ const original=structuredClone(schema);
+ for(const $schema of [undefined,'https://json-schema.org/draft/2020-12/schema','https://json-schema.org/draft/2019-09/schema','http://json-schema.org/draft-07/schema#']){
+  const input={...schema,...($schema?{$schema}:{})};
+  assert.equal(await validateToolArguments(input,{query:'concert',pageSize:20,view:'THREAD_VIEW_MINIMAL'}),true);
+  assert.equal(await validateToolArguments(input,{query:'concert',view:'invented'}),false);
+ }
+ assert.equal(await validateToolArguments(schema,{query:42}),false);
+ assert.equal(await validateToolArguments(schema,{query:'concert',pageSize:'20'}),false);
+ assert.equal(await validateToolArguments(schema,{}),false);
+ assert.deepEqual(schema,original);
+ await assert.rejects(validateToolArguments({...schema,inventedValidation:true},{query:'concert'}),/Unsupported/);
+});

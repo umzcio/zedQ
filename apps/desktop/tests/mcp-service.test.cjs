@@ -48,7 +48,7 @@ async function fixture(t,{oauth=false,registration=true,metadataUrl=false,authMe
    if(msg.method==='tools/list')return reply({tools:state.tools??[{name:'echo',description:'Echo input',inputSchema:{type:'object',properties:{text:{type:'string'}},required:['text'],additionalProperties:false},annotations:{readOnlyHint:true}},{name:'wait',description:'Wait',inputSchema:{type:'object'}}]});
    if(msg.method==='tools/call'){
     if(msg.params.name==='wait'){state.waitStarted?.();return}
-    return reply({content:[{type:'text',text:msg.params.arguments.text}],...(state.output===undefined?{}:{structuredContent:state.output})});
+    return reply({content:[{type:'text',text:msg.params.arguments.text??'Fixture tool result'}],...(state.output===undefined?{}:{structuredContent:state.output})});
    }
    return json({jsonrpc:'2.0',id:msg.id,error:{code:-32601,message:'Unknown method'}});
   }
@@ -166,4 +166,19 @@ test('client-secret auth pins issuer and token endpoint before transmitting the 
 
 test('malformed manual registration inputs produce an actionable validation error',async t=>{
  const {service}=setup(t);await assert.rejects(service.save({name:'Invalid',url:'https://example.com/mcp',clientId:42,clientSecret:'secret'}),/registered OAuth client ID/);
+});
+
+test('Google-style tool schemas validate through SDK calls and structured results',async t=>{
+ const f=await fixture(t);const {service}=setup(t,{allowLoopbackHttp:true});
+ const view={type:'string',enum:['MINIMAL','METADATA_ONLY'],'x-google-enum-descriptions':['Include snippets','Metadata only']};
+ f.tools=[{name:'search_threads',inputSchema:{type:'object',properties:{query:{type:'string'},view},required:['query']},outputSchema:{type:'object',properties:{view},required:['view']}}];
+ f.output={view:'MINIMAL'};
+ const row=await service.save({name:'Google schema fixture',url:f.origin+'/mcp'});await service.connect(row.id);await service.setTools({id:row.id,names:['search_threads']});const options={expectedRevision:service.list()[0].revision};
+ await assert.rejects(service.callTool(row.id,'search_threads',{query:'concert',view:'invalid'},options),/arguments/);
+ assert.equal(f.calls.filter(call=>call.method==='tools/call').length,0);
+ const result=await service.callTool(row.id,'search_threads',{query:'concert',view:'MINIMAL'},options);
+ assert.deepEqual(result.structuredContent,{view:'MINIMAL'});
+ assert.equal(f.calls.filter(call=>call.method==='tools/call').length,1);
+ f.output={view:'invalid'};
+ await assert.rejects(service.callTool(row.id,'search_threads',{query:'concert'},options),/output.*schema/);
 });
