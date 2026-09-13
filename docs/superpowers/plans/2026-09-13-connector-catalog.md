@@ -21,7 +21,7 @@
 - [x] Bundled arXiv MCP: official SDK client/server transport; search and get paper metadata + PDF source links against public arXiv API. Bounded XML parsing, query validation, cancellation and polite rate limit. Test malformed responses, escaping, limits and sources.
 - [x] Discover UI and setup: exact seven cards, search/category filters, actual logos, Your connectors/Discover tabs, installed/connected indicators, right-click actions. Preconfigure known endpoints; supply account-aware setup explanations and advanced authentication fields without exposing saved secrets. Test with isolated browser fixtures.
 - [x] Integrate/review: standard MCP execution for bundled arXiv; shared OAuth setup and catalog bridge. Run targeted/full tests and TypeScript, real read-only arXiv probe and unauthenticated provider discovery probes, packaged isolated fixture, signed module build. Never authorize real accounts on user's behalf.
-- [ ] Release: commit, merge, private push, backup app, install, reopen normal profile. Report exact account setup still required.
+- [x] Release: commit, merge, private push, backup app, install, reopen normal profile. Report exact account setup still required.
 
 ## Public sources
 - https://scite.ai/mcp
@@ -45,3 +45,11 @@
 - Packaged catalog fixture passed with seven native presets, correct Google setup, real bundled arXiv discovery and tool selection, saved/connected states and context menus.
 - Packaged OAuth/chat fixture passed with real SDK PKCE, native Keychain, approval, Ollama tool execution, source activity, close/reopen, silent reconnect and credential cleanup.
 - All mutation fixtures used disposable workspaces. Normal workspace was not used for testing.
+
+## Release result
+- Source commit `dc6704a` merged to main and pushed to the private GitHub remote.
+- Verified packaged app installed and reopened at the normal app path with the regular workspace.
+- Previous app retained at `.local-data/app-backups/pre-catalog-dc6704a/zQ.app`.
+- Installed app.asar SHA-256: `02f45f8776881ffe3a80c596aee797e84d4196625f0c2284f7a4aafd92c314f5` (matches tested package).
+- Verification logs and screenshots retained in `.local-data/catalog-verification-dc6704a`.
+- Personal Google OAuth registration/consent, work Microsoft sign-in/admin consent, Scite sign-in and GitHub token remain user setup steps; no real accounts were authorized during development.
