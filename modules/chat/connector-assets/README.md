@@ -9,3 +9,4 @@ Official publisher assets, downloaded 2026-09-13. Logos identify the services; t
 - `github.svg`: https://github.githubassets.com/favicons/favicon.svg
 - `scite.ico`: https://cdn.scite.ai/assets/images/favicon.ico
 - `microsoft365.ico`: https://www.microsoft.com/favicon.ico?v2
+- `scholar-gateway.png`: https://docs.scholargateway.ai/images/favicon-96x96.png
