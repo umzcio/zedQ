@@ -1,13 +1,13 @@
 # Code
 
-Reserved module. Not implemented or shipped. Future implementation supplies index.tsx and a signed manifest targeting the shell API. Native capabilities must be added to the shell before a module may request them.
+The signed Code module provides coding sessions beside the existing zQ modules. Native process control, SSH, filesystem access and persistence remain in the desktop host. The module consumes only `@zq/module-api` and shared UI components.
 
-The internal Claude profile-handoff foundation is implemented under the desktop's native services. It constructs exact-conversation launches and coordinates exclusive controller replacement. It is not connected to a renderer or live Claude adapter yet.
+- Projects group persistent sessions by folder and execution host.
+- Claude profiles use existing host-local shell functions and native conversation history. Explicit profile and Chat/Terminal handoffs resume the exact native conversation after confirming the previous controller stopped.
+- Other CLI launchers use Terminal only. External tmux attachment never takes ownership of the external process.
+- Files supports bounded text editing with conflict detection. Changes shows staged, unstaged and untracked diffs. Preview embeds localhost development servers and forwards remote ports through SSH.
+- Closing zQ detaches from owned sessions. Stop is an explicit action; archiving preserves the process, checkout and native history.
 
-The local persistent-session service is also implemented. A private tmux server owns the service and terminals independently of clients. Native clients can reconnect, read terminal snapshots and lifecycle events, and claim exclusive input ownership. This has been verified with synthetic processes, including service crashes and whole-client exit. Full terminal streaming, live Claude integration, external tmux discovery, SSH, and the visible Code module remain unshipped.
+Local prerequisites: tmux and the selected coding CLI. SSH hosts additionally need Node and zsh, working SSH keys/agent and a trusted host key. Connect explicitly installs the shipped session helper in the remote user's private zQ directory. No credentials are copied into zQ.
 
-- [First-release design](../../plans/code/first-release-design.md)
-- [Handoff foundation plan](../../docs/superpowers/plans/2026-09-15-code-handoff-foundation.md)
-- [Validation and remaining gates](../../plans/code/handoff-validation.md)
-- [Persistent service plan](../../docs/superpowers/plans/2026-09-15-code-session-service.md)
-- [Persistent service validation](../../plans/code/session-service-validation.md)
+[Product contract](../../plans/code/first-release-design.md) · [Native service](../../apps/desktop/electron/code/README.md) · [Interface validation](../../plans/code/interface-validation.md)

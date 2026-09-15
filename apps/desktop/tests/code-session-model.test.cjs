@@ -12,3 +12,9 @@ test('session controls do not accept writes or handoffs during uncertain ownersh
  assert.equal(canSwitch({state:'ready',nativeIdVerified:false}),false)
  assert.equal(canSwitch({state:'ready',nativeIdVerified:true}),true)
 })
+test('a resolution event collapses the original permission after incremental replay',()=>{
+ const pending={seq:1,kind:'permission',requestId:'p',text:'Allow?'}
+ const result=mergeEvents([pending],[{seq:2,kind:'status',requestId:'p',resolved:true,text:'Allowed'}])
+ assert.equal(result[0].resolved,true)
+ assert.equal(pending.resolved,undefined)
+})

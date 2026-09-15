@@ -72,7 +72,7 @@ app.whenReady().then(async () => {
  const sendCode=(channel,value)=>{if(window&&!window.isDestroyed())window.webContents.send(channel,value)};
  codeFactory=()=>new (require('./code/code-service.cjs').CodeService)({directory:path.join(directory,'code'),onChange:value=>sendCode('code:changed',value),onTerminal:value=>sendCode('code:terminal',value),pickDirectory:async()=>{const selected=await dialog.showOpenDialog(window,{title:'Choose Code project folder',properties:['openDirectory','createDirectory']});return selected.canceled?null:selected.filePaths[0]},openExternal:url=>shell.openExternal(url),reveal:folder=>shell.openPath(folder)});
  try{code=codeFactory()}catch(error){codeError=error}
- handle('code:invoke',(method,input)=>{if(!code)throw codeError;return code.invoke(method,input)});
+ handle('code:invoke',(method,input)=>{if(!code&&codeFactory){try{code=codeFactory();codeError=null}catch(error){codeError=error}}if(!code)throw codeError||new Error('Code service unavailable');return code.invoke(method,input)});
  const bundled=path.resolve(__dirname,'../bundled-modules');
  const moduleStore=new ModuleStore({directory:path.join(directory,'modules'),bundles:['hq','notes','tasks','chat','code'].map(name=>JSON.parse(fs.readFileSync(path.join(bundled,`${name}.zqmodule`),'utf8'))),trustedKeys:JSON.parse(fs.readFileSync(path.join(bundled,'trusted-keys.json'),'utf8')),apiVersion:1});
  handle('modules:runtime',()=>moduleStore.getRuntime());

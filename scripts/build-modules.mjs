@@ -109,7 +109,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
         if (!value || value.startsWith('--')) throw new Error(`--${flag} requires a value`)
         options[flag] = value
       } else if (moduleNames.includes(args[i]) && !options.names) options.names = [args[i]]
-      else throw new Error('Usage: node scripts/build-modules.mjs [hq|notes|tasks|chat] [--version 1.0.1] [--out path]')
+      else throw new Error('Usage: node scripts/build-modules.mjs [hq|notes|tasks|chat|code] [--version 1.0.1] [--out path]')
     }
     for (const output of await buildModules(options)) console.log(output)
   } catch (error) { console.error(error.message); process.exitCode = 1 }

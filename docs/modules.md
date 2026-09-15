@@ -37,7 +37,7 @@ Every Root stays mounted across navigation so controllers, chat drafts and subsc
 
 `useHost` exposes the workspace snapshot, authorized service groups, commands, navigation, notifications and save/close integration. `useWorkspaceField` performs functional updates against the host snapshot so concurrent module writes cannot replace each other's data. Modules requesting write access declare `workspace.write`. `useCommand` registers a command with cleanup; command dispatch returns false if the owning module is unavailable, allowing Quick Capture to retain its draft. Direct imports from the desktop app or another module are rejected during module builds. Shared UI is imported only through `@zq/ui`.
 
-The initial manifest API is deliberately constrained to the four shipped module identities, views and existing capabilities. Adding a new module identity or native capability requires a shell release; updating one of the existing modules does not. Breaking SDK/React-runtime changes require a new compatible API version, not silently reusing API version 1. Module CSS ships in its package; new styles should be authored there, rather than assuming future Tailwind utilities already exist in the installed shell.
+The initial manifest API is deliberately constrained to the five shipped module identities, views and existing capabilities. Adding a new module identity or native capability requires a shell release; updating one of the existing modules does not. Breaking SDK/React-runtime changes require a new compatible API version, not silently reusing API version 1. Module CSS ships in its package; new styles should be authored there, rather than assuming future Tailwind utilities already exist in the installed shell.
 
 ## Signing setup
 
@@ -56,7 +56,7 @@ npm run build
 npm run pack
 ```
 
-The build typechecks the app and modules, builds the four modules independently, signs their packages into `apps/desktop/bundled-modules`, and embeds their public trust roots. The desktop package includes those signed fallback packages, never the private signing key. `npm run desktop` starts the built app; the native module bridge is required, so a standalone Vite preview is not the module runtime.
+The build typechecks the app and modules, builds the five modules independently, signs their packages into `apps/desktop/bundled-modules`, and embeds their public trust roots. The desktop package includes those signed fallback packages, never the private signing key. `npm run desktop` starts the built app; the native module bridge is required, so a standalone Vite preview is not the module runtime.
 
 ## Release only Chat
 
@@ -120,3 +120,7 @@ The app-wide tooltip release adds `ui.tooltips.v1` to each updated module's requ
 HQ 1.0.3 and Notes 1.1.4 require `workspace.activity.v1`; Tasks 1.1.3 requires `workspace.drafts.v1`. Ship them with this shell update, which adds the shared activity/validation exports, optional numeric `Note.openedAt`, and shell-owned `workspace.saveDraftCopy`. Older stored note date strings remain readable. Install these three module versions together: an older installed HQ package can otherwise display numeric edit timestamps as raw text. The module store prefers an installed package over a newer bundled fallback, so verify running versions after staging updates and restarting. Workspace schemas are owned by the shell and are never rolled back by module rollback.
 
 Invalid workspace text stays in the open renderer; the shell persists the valid projection and blocks normal close while rejected edits remain. Recovery copies use their own native export path so the workspace size limit does not prevent rescuing a larger draft. This does not provide crash recovery for rejected edits. Import exhaustion now leaves an unavailable module surface with access to Module Settings; it does not stop healthy modules or bypass signature/capability checks.
+
+## Code shell release
+
+Code adds the fifth bundled identity, `zq.code`, and the `code.v1` native capability. It requires this shell release; older four-module shells cannot install it independently. Four-module bundled sets remain readable for compatibility, while this release packages all five fallbacks. Code UI and styles stay in `modules/code`; native lifecycle, SSH and filesystem services stay in the desktop host.

@@ -1,6 +1,6 @@
 # Code: sessions, interfaces, and Claude profiles
 
-Date: 2026-09-15. Implementation direction; Code is not shipped yet.
+Date: 2026-09-15. Implemented first-release contract; see [interface validation](interface-validation.md) for current evidence and limits.
 
 ## Product contract
 
