@@ -54,3 +54,18 @@ test('Calendar changes preview native details, cannot use chat-wide permission, 
  host.respondToInteraction({conversationId:c.id,id:card.id,decision:'once'});await until(()=>!host.runs.size);assert.equal(calls.length,1);assert.equal(calls[0].args.reviewToken,'native-review');
  await host.sendMessage({conversationId:c.id,text:'Cancel another'});await until(()=>host.conversation(c.id).messages.at(-1)?.interactions?.length);card=host.conversation(c.id).messages.at(-1).interactions[0];host.respondToInteraction({conversationId:c.id,id:card.id,decision:'deny'});await tick();assert.equal(calls.length,1);
 });
+
+test('new chats explain configured connectors without activating them, and refresh availability after selection',async t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'zq-connector-awareness-'));const {service,row,calls}=fixture();row.name='Gmail';row.url='https://example.test/private-endpoint';row.error='PRIVATE_AUTH_ERROR';row.tools=[{...structuredClone(tool),name:'create_draft',title:'Create Gmail draft'},{...structuredClone(tool),name:'send_draft',title:'Send Gmail draft',enabled:false}];
+ let request;const provider={supportsLocalTools:async()=>true,async streamChat(input){request=input;input.onDelta({content:'Ready'})}};
+ const host=new ChatService({directory:dir,provider,connectors:service});t.after(()=>{host.shutdown();fs.rmSync(dir,{recursive:true,force:true})});const conn=host.saveConnection({provider:'ollama',baseUrl:'http://localhost:11434',name:'Test'}),c=host.createConversation({connectionId:conn.id,model:'test'});
+ await host.sendMessage({conversationId:c.id,text:'Email this poem'});await until(()=>!host.runs.size);
+ const system=request.messages[0].content;assert.match(system,/Gmail/);assert.match(system,/not selected for this chat/);assert.match(system,/\+ → Connectors/);assert.doesNotMatch(system,/private-endpoint|PRIVATE_AUTH_ERROR/);assert.equal(request.localTools.some(t=>t.name.startsWith('mcp_')),false);assert.deepEqual(host.conversation(c.id).messages[0].connectorIds,[]);assert.equal(calls.length,0);
+ await host.sendMessage({conversationId:c.id,text:'Email this poem',connectorIds:[row.id]});await until(()=>!host.runs.size);
+ assert.match(request.messages[0].content,/selected for this chat/);assert.match(request.messages[0].content,/disabledTools.*send_draft/);assert.match(request.messages[0].content,/Manage tools/);assert.equal(request.localTools.filter(t=>t.name.startsWith('mcp_')).length,1);assert.equal(calls.length,0);
+});
+
+test('connector availability reports sign-in and model limits without disclosing connection details',()=>{
+ const {connectorAvailability}=require('../electron/chat-connectors.cjs');const {service,row}=fixture();row.status='error';row.needsSignIn=true;row.error='PRIVATE_ERROR';row.clientId='PRIVATE_CLIENT';
+ const context=connectorAvailability(service,[],{local:false});assert.match(context,/sign-in required/);assert.match(context,/current settings cannot call connector tools/);assert.doesNotMatch(context,/PRIVATE_|mcp\.example\.test/);assert.equal(connectorAvailability(null,[]),'');
+});
