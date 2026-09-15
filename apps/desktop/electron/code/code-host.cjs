@@ -44,8 +44,11 @@ class CodeHost {
         }
       },
       save: async (s) => {
-        Object.assign(this.session(s.id), s, {
-          pid: this.session(s.id).pid,
+        const current = this.session(s.id)
+        if (!Object.hasOwn(s, 'recovery')) delete current.recovery
+        Object.assign(current, s, {
+          pid: current.pid,
+          error: s.state === 'ready' ? null : s.error,
           updatedAt: Date.now()
         })
         this.catalog.save()
@@ -584,11 +587,12 @@ class CodeHost {
         'profiles',
         input.profileId || s.profileId
       )
-      return this.coordinator.switchController({
+      await this.coordinator.switchController({
         sessionId: s.id,
         expectedRevision: input.expectedRevision,
         target: { profile, mode: input.mode || s.mode }
       })
+      return this.session(s.id)
     }
     if (
       ['attachTerminal', 'writeTerminal', 'resizeTerminal'].includes(method)

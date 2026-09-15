@@ -63,3 +63,22 @@ test('terminal attachment generations cancel late attach and stale detach withou
  await assert.rejects(service.invoke('writeTerminal',{id:'s',data:'stale',attachmentId:oldToken}),{code:'ATTACHMENT_SUPERSEDED'})
  await service.invoke('detachTerminal',{id:'s',attachmentId:newToken});assert.equal(spawned[0].killed,true)
 })
+test('successful recovery clears persisted stale recovery and error in both result and snapshot',async t=>{
+ const {root,host}=setup(t),{randomUUID}=require('node:crypto'),owner={}
+ const project=host.catalog.createProject({name:'Work',cwd:root})
+ const profile=host.catalog.createProfile({name:'Claude',launcherFile:path.join(root,'profile.zsh'),functionName:'claude'})
+ const row={id:randomUUID(),projectId:project.id,hostId:'local',cwd:root,profileId:profile.id,nativeId:randomUUID(),nativeIdVerified:true,mode:'terminal',adapter:'claude',state:'recoverable',revision:2,pid:123,error:'TARGET_NOT_READY',recovery:{targetProfileId:profile.id,targetMode:'terminal',code:'TARGET_NOT_READY'}}
+ host.catalog.value.sessions.push(row);host.catalog.save()
+ host.tmux.inspect=async()=>({pid:row.pid})
+ host.preflight=async()=>{}
+ host.stop=async()=>{row.pid=null}
+ host.start=async()=>{row.pid=456;return {id:row.id}}
+ host.ready=async()=>({nativeId:row.nativeId})
+ await host.dispatch(owner,'claimSession',{id:row.id})
+ const result=await host.dispatch(owner,'resumeSession',{id:row.id,expectedRevision:2})
+ assert.equal(result.state,'ready');assert.equal(result.pid,456);assert.equal(result.error,null);assert.equal(result.recovery,undefined)
+ const snapshot=await host.dispatch(owner,'snapshot')
+ assert.equal(snapshot.sessions[0].error,null);assert.equal(snapshot.sessions[0].recovery,undefined)
+ const saved=JSON.parse(fs.readFileSync(path.join(root,'code.json'))).sessions[0]
+ assert.equal(saved.error,null);assert.equal(saved.recovery,undefined)
+})

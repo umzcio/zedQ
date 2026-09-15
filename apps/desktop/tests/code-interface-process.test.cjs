@@ -220,6 +220,12 @@ test('failed target retains original profile and native identity with recoverabl
   })
   assert.equal(recovered.state, 'ready')
   assert.equal(recovered.nativeId, s.nativeId)
+  assert.equal(recovered.recovery, undefined)
+  assert.equal(recovered.error, null)
+  const snapshot = (await a.invoke('snapshot')).sessions.find(row => row.id === s.id)
+  assert.equal(snapshot.state, 'ready')
+  assert.equal(snapshot.recovery, undefined)
+  assert.equal(snapshot.error, null)
 })
 test('pending approvals block handoff until explicit interrupt; no decision or prompt is replayed', async (t) => {
   const h = setup(t),
