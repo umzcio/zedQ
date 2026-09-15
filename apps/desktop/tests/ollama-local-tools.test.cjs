@@ -220,3 +220,9 @@ test('exhausted tool budget requests a final summary without tools and marks the
  const p=createOllamaProvider({fetchImpl:async(_,options)=>{const body=JSON.parse(options.body);if(++requests<=16)return response([line({tool_calls:[call()]}),done]);assert.equal(body.tools,undefined);assert.match(JSON.stringify(body.messages),/summarize.*results/i);return response([line({content:'I checked the primary calendar; the rest remain unchecked.'}),done]);}});
  await assert.rejects(p.streamChat(request({onLocalTool:async()=>{calls++;return {}},onDelta:d=>deltas.push(d.content)})),{code:'TOOL_LIMIT'});assert.equal(calls,16);assert.equal(requests,17);assert.match(deltas.join(''),/remain unchecked/);
 });
+
+test('a batch exceeding the remaining budget is skipped and followed by a summary of completed results',async()=>{
+ let requests=0,calls=0;const deltas=[];
+ const p=createOllamaProvider({fetchImpl:async(_,options)=>{const body=JSON.parse(options.body);requests++;if(requests===1)return response([line({tool_calls:Array.from({length:15},()=>call())}),done]);if(requests===2)return response([line({tool_calls:[call(),call()]}),done]);assert.equal(body.tools,undefined);assert.equal(body.messages.filter(m=>m.role==='tool').length,15);return response([line({content:'Found the file. Further checks remain incomplete.'}),done]);}});
+ await assert.rejects(p.streamChat(request({onLocalTool:async()=>{calls++;return {found:'registration.pdf'}},onDelta:d=>deltas.push(d.content)})),{code:'TOOL_LIMIT'});assert.equal(calls,15);assert.equal(requests,3);assert.match(deltas.join(''),/Found the file/);
+});

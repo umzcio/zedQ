@@ -192,15 +192,15 @@ function createOllamaProvider({ fetchImpl = globalThis.fetch, idleMs = 90000, to
     const allowedNames = new Set(tools?.map(tool => tool.function.name));
     const history = messages.map(({ role, content, images }) => ({ role, content, ...(images?.length ? { images: [...images] } : {}) }));
     const telemetry=createTelemetry({onUsage,onModel});
-    let textBytes = 0, wireBytes = 0, executedCalls = 0, hasVisibleContent = false;
+    let textBytes = 0, wireBytes = 0, executedCalls = 0, hasVisibleContent = false, budgetReached = false;
     // One scope spans network rounds AND execution, so callbacks cannot evade
     // the deadline or schedule another dispatch after cancellation.
     const scope = hasTools ? requestScope(signal, idleMs, totalMs, onLocalTool?.userWait) : undefined;
     try {
       while (true) {
         scope?.check();
-        const summarize = hasTools && executedCalls >= TOOL_CALL_LIMIT;
-        const roundHistory = summarize ? [...history,{role:'system',content:'The tool budget for this response is exhausted. Do not call more tools. Summarize the results already obtained, clearly state what remains unchecked or failed, and do not claim the entire request is complete.'}] : history;
+        const summarize = hasTools && (budgetReached || executedCalls >= TOOL_CALL_LIMIT);
+        const roundHistory = summarize ? [...history,{role:'system',content:'The tool budget for this response is exhausted or the last proposed batch exceeded the remaining budget and was not executed. Do not call more tools. Summarize the results already obtained, clearly state what remains unchecked or failed, and do not claim the entire request is complete.'}] : history;
         const body = JSON.stringify({ model, messages: roundHistory, stream: true, options: { num_predict: hasTools ? 8192 : 2048 }, ...(hasTools && !summarize ? { tools } : {}) });
         if (Buffer.byteLength(body, 'utf8') > REQUEST_LIMIT) throw failure('INVALID_REQUEST', 'Chat history exceeded the request size limit.');
         let pending = '', complete = false, doneReason, firstContent = true;
@@ -221,7 +221,7 @@ function createOllamaProvider({ fetchImpl = globalThis.fetch, idleMs = 90000, to
             throw failure('INVALID_RESPONSE', 'Ollama returned an invalid chat record.');
           }
           if (payload.message?.tool_calls) {
-            if (executedCalls + assistant.tool_calls.length + payload.message.tool_calls.length > TOOL_CALL_LIMIT) throw failure('TOOL_LIMIT', TOOL_LIMIT_MESSAGE);
+            if (summarize && payload.message.tool_calls.length || assistant.tool_calls.length + payload.message.tool_calls.length > 64) throw failure('TOOL_LIMIT', TOOL_LIMIT_MESSAGE);
             for (const call of payload.message.tool_calls) {
               if (!object(call) || (call.type !== undefined && call.type !== 'function') || !object(call.function) ||
                 !allowedNames.has(call.function.name) || !object(call.function.arguments)) {
@@ -261,6 +261,12 @@ function createOllamaProvider({ fetchImpl = globalThis.fetch, idleMs = 90000, to
         if (!assistant.tool_calls.length) { if(summarize) throw failure('TOOL_LIMIT',TOOL_LIMIT_MESSAGE); return; }
         if (doneReason !== undefined && doneReason !== 'stop') throw failure('INVALID_RESPONSE', 'Ollama did not finish its local tool calls successfully.');
         scope.check();
+        if(executedCalls+assistant.tool_calls.length>TOOL_CALL_LIMIT){
+          budgetReached=true;
+          // Skip the entire batch; never record unexecuted calls as completed.
+          if(assistant.content)history.push({role:'assistant',content:assistant.content});
+          telemetry.nextRound();continue;
+        }
         history.push(assistant);
         for (const call of assistant.tool_calls) {
           scope.check();

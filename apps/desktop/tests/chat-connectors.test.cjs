@@ -81,3 +81,18 @@ test('Drive uploads use only chat-scoped artifact versions and require a one-tim
  await host.sendMessage({conversationId:c.id,text:'Upload this',artifactContext:target});await until(()=>host.conversation(c.id).messages.at(-1)?.interactions?.length);let card=host.conversation(c.id).messages.at(-1).interactions[0];assert.equal(card.onceOnly,true);assert.equal(card.approvalAction,'upload_file');assert.equal(calls.length,0);assert.throws(()=>host.respondToInteraction({conversationId:c.id,id:card.id,decision:'chat'}),/once/);host.respondToInteraction({conversationId:c.id,id:card.id,decision:'deny'});await until(()=>!host.runs.size);assert.equal(calls.length,0);
  await host.sendMessage({conversationId:c.id,text:'Upload this now',artifactContext:target});await until(()=>host.conversation(c.id).messages.at(-1)?.interactions?.length);card=host.conversation(c.id).messages.at(-1).interactions[0];host.respondToInteraction({conversationId:c.id,id:card.id,decision:'once'});await until(()=>!host.runs.size);assert.equal(calls.length,1);assert.equal(calls[0].args.reviewToken,'native-upload');assert.equal(discarded,2);
 });
+
+test('downloaded PDF supplies readable text to the model while preserving its binary attachment',async()=>{
+ const PDF=require('pdfkit'),doc=new PDF(),chunks=[];doc.on('data',chunk=>chunks.push(chunk));const ready=new Promise(resolve=>doc.on('end',resolve));doc.text('Vehicle: 2015 Test Wagon. VIN: TEST1234567890123');doc.end();await ready;const data=Buffer.concat(chunks).toString('base64');
+ const {service}=fixture();service.callTool=async()=>({content:[{type:'resource',resource:{uri:'file:///registration.pdf',mimeType:'application/pdf',blob:data}}]});
+ const entries=connectorTools(service,['remote-a']),reply={};const exec=createConnectorExecutor({service,entries,conversationId:'chat',run:{controller:new AbortController()},check:()=>{},update:fn=>fn(reply),interactions:{approve:async()=>true}});
+ const result=await exec.execute({name:entries[0].name,arguments:{query:'vehicle'}});
+ assert.match(JSON.stringify(result),/TEST1234567890123/);assert.ok(!JSON.stringify(result).includes(data));assert.equal(reply.generatedFiles[0].data,data);assert.equal(reply.toolActivity[0].status,'complete');
+});
+
+test('a PDF without a text layer remains attached and reports extraction limits instead of failing the download',async()=>{
+ const PDF=require('pdfkit'),doc=new PDF(),chunks=[];doc.on('data',chunk=>chunks.push(chunk));const done=new Promise(resolve=>doc.on('end',resolve));doc.end();await done;const data=Buffer.concat(chunks).toString('base64');
+ const {service}=fixture();service.callTool=async()=>({content:[{type:'resource',resource:{uri:'file:///scan.pdf',mimeType:'application/pdf',blob:data}}]});
+ const entries=connectorTools(service,['remote-a']),reply={};const exec=createConnectorExecutor({service,entries,conversationId:'chat',run:{controller:new AbortController()},check:()=>{},update:fn=>fn(reply),interactions:{approve:async()=>true}});
+ const result=await exec.execute({name:entries[0].name,arguments:{query:'scan'}});assert.match(JSON.stringify(result),/no readable text layer/);assert.equal(result.isError,undefined);assert.equal(reply.toolActivity[0].status,'complete');assert.equal(reply.generatedFiles[0].data,data);
+});

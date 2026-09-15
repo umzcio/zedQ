@@ -22,6 +22,10 @@ Verify work-account authentication, tool discovery, and representative Email, Ca
 - Connector discovery, setup, tool selection, and permission UI improvements.
 - Further connector reliability and compatibility verification.
 
+## Chat queue keyboard focus
+
+- The queue browser regression times out when expecting focus to return to “Edit queued message 1” after a successful save. Reproduced on both the current changes and unchanged ChatView on 2026-09-15. Investigate dialog close autofocus and disabled trigger restoration; retain keyboard access and preserve queued content. This is separate from PDF reading and response continuation.
+
 ## Already shipped
 
 Gmail draft creation and reviewed sending, Google Calendar actions, and Google Drive document uploads remain available.

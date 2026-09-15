@@ -110,7 +110,7 @@ class ChatService{
     result.push({role:'user',content:references.length?`Reference material:\n${JSON.stringify(references)}\n\nUser message:\n${m.content}`:m.content,...(images.length?{images}:{})});
    }else{
     for(const interaction of m.interactions??[])if(interaction.kind==='clarification'&&interaction.status==='answered'&&interaction.answer){result.push({role:'assistant',content:interaction.question},{role:'user',content:interaction.answer})}
-    if(['complete','stopped'].includes(m.status)&&m.content)result.push({role:'assistant',content:m.content});
+    if(['complete','stopped','error','interrupted'].includes(m.status)&&m.content)result.push({role:'assistant',content:['error','interrupted'].includes(m.status)?'[This earlier response is incomplete. Use its partial results, but verify unfinished work before claiming completion.]\n'+m.content:m.content});
    }
   }
   if(Buffer.byteLength(JSON.stringify(result.map(({images,...m})=>m)))>512000)throw Error('Conversation context is too large. Start a new chat or attach fewer files.');

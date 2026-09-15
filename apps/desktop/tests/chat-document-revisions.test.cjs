@@ -107,3 +107,17 @@ test('revisions send only document fields and the active signal to the fixed-ope
  assert.equal(result.ok,true,result.error);
  assert.equal(f.artifacts.list()[0].versions.length,2);
 });
+
+test('an imported PDF can be read again without permitting a lossy revision',async t=>{
+ const f=await fixture(t),original=await f.artifacts.create({format:'pdf',title:'Registration fixture',content:'Vehicle: 2015 Test Wagon. VIN: TEST1234567890123'});
+ const file=f.artifacts.file({artifactId:original.id,versionId:original.versions[0].id}),imported=f.artifacts.importFile(file);let read,revision;
+ await f.send(async a=>{read=await a.onLocalTool({name:'read_document',arguments:{artifactId:imported.id}});revision=await a.onLocalTool({name:'revise_document',arguments:{artifactId:imported.id,baseVersionId:imported.versions[0].id,content:'Lossy replacement'}})},{artifactContext:{artifactId:imported.id,versionId:imported.versions[0].id}});
+ assert.match(read.content??'',/TEST1234567890123/);assert.equal(read.editable,false);assert.ok(revision.error);assert.equal(f.artifacts.artifact(imported.id).versions.length,1);
+ assert.equal(f.artifacts.file({artifactId:imported.id,versionId:imported.versions[0].id}).data,file.data);
+});
+
+test('continuation retains partial failed results with an explicit incomplete marker',async t=>{
+ const f=await fixture(t);await f.send(async a=>{a.onDelta({content:'Found the registration document.'});throw Error('Tool limit reached')});
+ await f.send(async a=>{const prior=a.messages.find(m=>m.role==='assistant');assert.match(prior?.content??'',/Found the registration/);assert.match(prior.content,/incomplete/i)});
+ assert.equal(f.last().status,'complete',f.last().error);
+});

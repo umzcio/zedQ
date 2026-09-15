@@ -1,12 +1,7 @@
-const fs=require('node:fs'),path=require('node:path'),{randomUUID}=require('node:crypto'),{Worker}=require('node:worker_threads');
+const fs=require('node:fs'),path=require('node:path'),{randomUUID}=require('node:crypto');
 const {text}=require('./chat-store.cjs');
 const {MAX_FILE,MAX_TEXT,MAX_IMAGE,isAttachment,publicAttachment}=require('./attachment-schema.cjs');
-function extractPdf(data){return new Promise((resolve,reject)=>{
- const worker=new Worker(path.join(__dirname,'pdf-worker.cjs'),{workerData:data,resourceLimits:{maxOldGenerationSizeMb:192}});let settled=false;
- const finish=(error,value)=>{if(settled)return;settled=true;clearTimeout(timer);void worker.terminate();error?reject(error):resolve(value)};
- const timer=setTimeout(()=>finish(Error('This PDF took too long to read. Try a smaller document.')),15000);
- worker.on('message',result=>finish(result.error?Error(result.error):null,result.value));worker.on('error',e=>finish(e));worker.on('exit',code=>{if(!settled)finish(Error(`PDF reader stopped (${code}).`))});
-})}
+const {extractPdf}=require('./pdf-extractor.cjs');
 class AttachmentService{
  constructor({extractPdf:pdf=extractPdf,normalizeImage}={}){this.pdf=pdf;this.normalizeImage=normalizeImage;this.items=new Map();this.importing=false}
  async importFiles(files){

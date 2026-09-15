@@ -91,8 +91,10 @@ export default function ChatView({chat,notes,closing,settings,prepareNotes}:{pre
   catch(e){setError((e as Error).message);return false}finally{lock.current=false;setPending(false)}
  }
  async function chooseConnectors(ids:string[]|null){if(lock.current||busy||waiting||skillDisabled)return;lock.current=true;setConnectorSaving(true);setError('');try{await chat.setConnectorChoices(draftId,ids)}catch(e){if(activeOwner.current===draftId)setError((e as Error).message)}finally{lock.current=false;setConnectorSaving(false)}}
- async function send(){
-  if(lock.current||slash.blockBareSlash||contextError||readOnly||closing||importing||!toolsReady||toolError||(!draft.trim()&&!ids.length&&!files.length)||!choice)return
+ async function send(continuation=false){
+  if(continuation&&(queueMode||draft.trim()||ids.length||files.length))return
+  const messageText=continuation?'Continue the unfinished request from the partial results already obtained. Read the documents already available in this chat instead of downloading them again. Do not repeat completed actions; verify uncertain actions before retrying. Summarize what you can establish and clearly identify anything still missing.':draft
+  if(lock.current||slash.blockBareSlash||contextError||readOnly||closing||importing||!toolsReady||toolError||(!messageText.trim()&&!ids.length&&!files.length)||!choice)return
   lock.current=true;setPending(true);setError('');if(!queueMode)motion.prepareSend()
   try{
    const target=c??await chat.create(choice)
@@ -100,7 +102,7 @@ export default function ChatView({chat,notes,closing,settings,prepareNotes}:{pre
    if(target.connectionId!==choice.connectionId||target.model!==choice.model)await unwrap(services.chat.configureConversation({id:target.id,...choice}))
    if(ids.length)await prepareNotes()
    await chat.flushDrafts()
-   await unwrap((queueMode?services.chat.enqueueMessage:services.chat.send)({conversationId:target.id,text:draft,noteIds:ids,attachmentIds:files.map(a=>a.id),tools:selectedTools,skillIds:skillSelection,connectorIds:connectorSelection,...(chat.artifactTarget?{artifactContext:chat.artifactTarget}:{})}))
+   await unwrap((queueMode?services.chat.enqueueMessage:services.chat.send)({conversationId:target.id,text:messageText,noteIds:ids,attachmentIds:files.map(a=>a.id),tools:selectedTools,skillIds:skillSelection,connectorIds:connectorSelection,...(chat.artifactTarget?{artifactContext:chat.artifactTarget}:{})}))
    chat.setDraft(target.id,'');chat.setAttachments(target.id,[]);chat.clearFiles(target.id);follow.current=true
   }catch(e){if(!queueMode)motion.cancelSend();if(activeOwner.current===draftId)setError((e as Error).message)}finally{lock.current=false;setPending(false);requestAnimationFrame(()=>{if(activeOwner.current===draftId)input.current?.focus()})}
  }
@@ -118,7 +120,7 @@ export default function ChatView({chat,notes,closing,settings,prepareNotes}:{pre
   {!empty&&<div className="chat-messages" ref={scroller} onScroll={scrollChanged}>
    <div className="chat-thread" ref={motion.thread}>{c!.messages.map(m=><ChatMessageActions key={m.id} message={m} chat={chat} choice={choice} disabled={busy||pending||closing||readOnly} notes={notes} settings={settings} matched={finding&&matches.includes(m.id)} currentMatch={finding&&currentMatch===m.id}>
     {m.role==='assistant'&&m.status==='streaming'&&!m.content&&<ThinkingMark/>}
-    {m.role==='assistant'&&m.status==='error'?<div className="chat-response-error" role="alert"><WarningCircle size={18} aria-hidden="true"/><div><strong>Response incomplete</strong><p>{m.error||'The response stopped before it finished.'}</p>{(m.content||m.toolActivity?.length)&&<p className="chat-response-error-hint">The content below is partial. Completed tool steps do not mean the whole request finished.</p>}</div></div>:m.role==='assistant'&&['stopped','interrupted','error'].includes(m.status)&&<ControlTooltip content={m.status==='stopped'?'Generation was stopped before completion. Use the message actions to generate another response.':m.status==='interrupted'?'The response was interrupted before it finished. Use the message actions to retry.':'The response could not finish. Review the error details and use the message actions to retry.'}><div className="chat-response-status" tabIndex={0}>{m.status==='stopped'?'Stopped':m.status==='interrupted'?'Interrupted':'Couldn’t finish'}</div></ControlTooltip>}
+    {m.role==='assistant'&&['stopped','interrupted'].includes(m.status)&&<ControlTooltip content={m.status==='stopped'?'Generation was stopped before completion. Use the message actions to generate another response.':m.status==='interrupted'?'The response was interrupted before it finished. Use the message actions to retry.':'The response could not finish. Review the error details and use the message actions to retry.'}><div className="chat-response-status" tabIndex={0}>{m.status==='stopped'?'Stopped':m.status==='interrupted'?'Interrupted':'Couldn’t finish'}</div></ControlTooltip>}
     {(!!m.attachments?.length||m.context.length>0)&&<div className="attachment-tray sent-attachments">{m.attachments?.map(a=><AttachmentCard key={a.id} item={a} onPreview={()=>setPreview({id:a.id,name:a.name})}/>)}{m.context.map(n=><AttachmentCard key={n.id} item={{id:n.id,name:n.title||'Untitled',kind:'note',size:0,preview:''}} onPreview={()=>setPreview({id:`${m.id}:${n.id}`,name:n.title||'Untitled',text:n.body})}/>)}</div>}
     {m.thinking&&<Collapsible className="chat-thinking"><CollapsibleTrigger tooltip="Show or hide the model’s thinking details" className="chat-thinking-trigger"><CaretRight size={12}/><span>{m.status==='streaming'&&!m.content?'Thinking…':'Thinking'}</span></CollapsibleTrigger><CollapsibleContent><ChatMarkdown content={m.thinking}/></CollapsibleContent></Collapsible>}
     {m.role==='assistant'&&<ChatSkillActivity skills={m.skillUsage} closing={closing}/>}
@@ -126,6 +128,7 @@ export default function ChatView({chat,notes,closing,settings,prepareNotes}:{pre
     {m.role==='user'?<div className="chat-user-text">{m.content}</div>:m.content?<ChatMarkdown content={withoutSourceAppendix(m.content,messageSources(m).sources)} sources={messageSources(m).sources} onSourceOpen={(source,origin)=>chat.openSources(c!.id,m,source.url,origin)}/>:null}
     {m.role==='assistant'&&<ChatSources message={m} closing={closing} onOpen={()=>chat.openSources(c!.id,m)}/>}
     {m.interactions?.map(interaction=><ChatInteraction key={`${c!.id}:${interaction.id}`} interaction={interaction} conversationId={c!.id} disabled={closing||readOnly}/>)}
+    {m.role==='assistant'&&m.status==='error'&&<div className="chat-response-error" role="alert"><WarningCircle size={18} aria-hidden="true"/><div><strong>Response incomplete</strong><p>{m.error||'The response stopped before it finished.'}</p>{(m.content||m.toolActivity?.length)&&<p className="chat-response-error-hint">The content above is partial. Completed tool steps do not mean the whole request finished.</p>}{m.id===c!.messages.at(-1)?.id&&<Button variant="outline" size="sm" tooltip={draft.trim()||ids.length||files.length?'Send or clear your draft before continuing':queueMode?'Finish or remove queued messages before continuing':'Continue from the partial results and documents already obtained'} disabled={queueMode||!!draft.trim()||!!ids.length||!!files.length||pending||closing||readOnly||importing||!toolsReady||!!toolError||!!contextError||!choice||connectorSaving} onClick={()=>void send(true)}>Continue response</Button>}</div></div>}
     {m.error&&m.role!=='assistant'&&<p className="chat-error" role="alert">{m.error}</p>}
    </ChatMessageActions>)}</div>
   </div>}
