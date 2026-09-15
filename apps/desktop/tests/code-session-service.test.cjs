@@ -5,7 +5,7 @@ const os = require('node:os')
 const path = require('node:path')
 const net = require('node:net')
 const {randomUUID} = require('node:crypto')
-const {execFileSync} = require('node:child_process')
+const {execFileSync,execFile} = require('node:child_process')
 const {connectCodeService} = require('../electron/code/session-client.cjs')
 const tmuxPath = '/opt/homebrew/bin/tmux'
 async function until(fn) {
@@ -198,4 +198,17 @@ test('Stop remains unconfirmed while the owned process ignores hang-up',async t 
   assert.equal(uncertain.pid,before.pid)
   process.kill(before.pid,'SIGKILL')
   await until(async () => (await client.request('snapshot',{id:h.id})).state === 'stopped')
+})
+
+test('entire client process can exit and another process resumes the same terminal',async t => {
+  const h = setup(t)
+  const before = await new Promise((resolve,reject) => execFile(process.execPath,
+    [path.join(__dirname,'fixtures/code/service-client-process.cjs'),h.root,tmuxPath,h.id],
+    {env:{...process.env,HOME:h.root,ZDOTDIR:h.root},encoding:'utf8',timeout:10000},
+    (error,stdout) => {if (error) reject(error); else resolve(JSON.parse(stdout))}))
+  const next = await h.connect()
+  assert.equal((await next.request('snapshot',{id:h.id})).pid,before.pid)
+  await next.request('claim',{id:h.id})
+  await next.request('write',{id:h.id,data:'new client process\r'})
+  await until(async () => (await next.request('snapshot',{id:h.id})).output.includes('echo:new client process'))
 })

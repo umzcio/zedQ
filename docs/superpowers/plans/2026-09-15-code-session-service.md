@@ -10,6 +10,8 @@
 
 **Spec:** `plans/code/first-release-design.md`, milestone 2. This local service is not yet the renderer API or the Claude structured adapter. External tmux discovery, SSH and full streaming terminal rendering remain separate integration gates.
 
+**Implementation notes:** Completed in an isolated worktree. Input uses tmux hex-byte transport after review found trailing-semicolon corruption in literal key commands. Stop verifies process disappearance separately from pane disappearance: a surviving PID keeps `stopping` and rejects completion. Saved PIDs are never blindly signalled; PID reuse after restart remains conservative uncertainty. Electron's Node-mode environment flag is scoped to the service session, not agent sessions. No visible Code tab or app replacement is part of this milestone.
+
 ## Constraints and decisions
 
 - Tests use isolated temporary HOME/ZDOTDIR and a dedicated tmux socket; never the user's tmux server, CLI profiles, credentials or regular workspace.
@@ -29,9 +31,9 @@ Create `apps/desktop/electron/code/service-storage.cjs`, `tmux.cjs`; test in `ap
 
 Interfaces: `prepareRoot(root): {root,socket,tmuxSocket,token}`, `readCatalog(paths): Catalog`, `writeCatalog(paths,catalog): void`; `createTmux({binary,socket,env})` returns `run(args): Promise<string>`, `launch(name,launch,cols,rows)`, `inspect(name)`, `capture(name)`, `write(name,data)`, `resize(name,cols,rows)`, `stop(name)`.
 
-- [ ] Write storage tests that reject a symlink root/token, permissive files, corrupt/version-mismatched state and preserve the previous file on invalid writes; run to failure.
-- [ ] Implement exclusive token creation, owner/mode checks, bounded reads, atomic catalog writes and validated session IDs. Tmux calls use `execFile` with a timeout and bounded output. Build a single shell command by quoting every launch argument, never inserting raw arguments; reject NUL and impose lengths.
-- [ ] Run storage tests and commit.
+- [x] Write storage tests that reject a symlink root/token, permissive files, corrupt/version-mismatched state and preserve the previous file on invalid writes; run to failure.
+- [x] Implement exclusive token creation, owner/mode checks, bounded reads, atomic catalog writes and validated session IDs. Tmux calls use `execFile` with a timeout and bounded output. Build a single shell command by quoting every launch argument, never inserting raw arguments; reject NUL and impose lengths.
+- [x] Run storage tests and commit.
 
 ### 2. Singleton service and native client
 
@@ -39,20 +41,20 @@ Create `apps/desktop/electron/code/session-service.cjs`, `session-client.cjs`.
 
 Interface: `connectCodeService({root,tmuxPath,nodePath=process.execPath,env=process.env})` returns `{request(method,params): Promise<unknown>, close():void}`. Methods: `ping`, `list`, `create({id,launch})`, `claim({id})`, `release({id})`, `snapshot({id})`, `write({id,data})`, `resize({id,cols,rows})`, `stop({id})`, `events({after})`. `launch` is `{file,args,cwd}`; it is not saved in the catalog. List records include ID, cwd, state, pane PID and creation time, never launch arguments or environment.
 
-- [ ] Write process tests before implementation: create a synthetic interactive agent, claim input, disconnect, reconnect, verify identical PID/output, and finish with explicit Stop. Assert duplicate creation returns the same ID/PID.
-- [ ] Implement startup under a named tmux service session. A fixed private configuration disables user tmux configuration. Authenticate protocol version and token before dispatch. Serialize operations and check socket liveness before queued mutations.
-- [ ] Persist state transitions and bounded journal entries. Inspect pane liveness before exposing state; `starting` can reconcile to running or stopped. `stopping` with a surviving pane remains blocked for input until explicit Stop succeeds. Lost tmux server means stopped, not empty successful output or automatic restart.
-- [ ] Implement leases, bounded snapshots, strict sizes/input validation, connection/request timeouts and slow-client disconnects. Client close only disconnects IPC. A crash breaks pending requests explicitly.
-- [ ] Run tests and commit.
+- [x] Write process tests before implementation: create a synthetic interactive agent, claim input, disconnect, reconnect, verify identical PID/output, and finish with explicit Stop. Assert duplicate creation returns the same ID/PID.
+- [x] Implement startup under a named tmux service session. A fixed private configuration disables user tmux configuration. Authenticate protocol version and token before dispatch. Serialize operations and check socket liveness before queued mutations.
+- [x] Persist state transitions and bounded journal entries. Inspect pane liveness before exposing state; `starting` can reconcile to running or stopped. `stopping` with a surviving pane remains blocked for input until explicit Stop succeeds. Lost tmux server means stopped, not empty successful output or automatic restart.
+- [x] Implement leases, bounded snapshots, strict sizes/input validation, connection/request timeouts and slow-client disconnects. Client close only disconnects IPC. A crash breaks pending requests explicitly.
+- [x] Run tests and commit.
 
 ### 3. Crash, authorization and replay verification
 
 Create `apps/desktop/tests/code-session-service.test.cjs` plus `fixtures/code/interactive-agent.cjs`; update `plans/code/session-service-validation.md` and `modules/code/README.md`.
 
-- [ ] Add tests: competing clients cannot write/resize/stop; rejected authentication/version/oversized input; simultaneous startup uses one service; kill only the service pane and reconnect to the same agent PID; kill the isolated tmux server and verify no automatic agent respawn; lifecycle sequence survives restart; retained events report truncation; shell metacharacters are literal.
-- [ ] Teardown every test's isolated server and temporary root, including failure paths. Check native launch arguments do not appear in persisted catalog. Test rejected connection closure does not affect a valid owner.
-- [ ] Run `node --test apps/desktop/tests/code-*.test.cjs`, `npm run typecheck`, and `DEVELOPER_DIR=/Library/Developer/CommandLineTools npm test`. Record actual outcomes and unverified live-Claude/renderer/SSH gates.
-- [ ] Review crash boundaries and ownership, commit, integrate and restore the normal development checkout. No app replacement for this native-only milestone.
+- [x] Add tests: competing clients cannot write/resize/stop; rejected authentication/version/oversized input; simultaneous startup uses one service; kill only the service pane and reconnect to the same agent PID; kill the isolated tmux server and verify no automatic agent respawn; lifecycle sequence survives restart; retained events report truncation; shell metacharacters are literal.
+- [x] Teardown every test's isolated server and temporary root, including failure paths. Check native launch arguments do not appear in persisted catalog. Test rejected connection closure does not affect a valid owner.
+- [x] Run `node --test apps/desktop/tests/code-*.test.cjs`, `npm run typecheck`, and `DEVELOPER_DIR=/Library/Developer/CommandLineTools npm test`. Record actual outcomes and unverified live-Claude/renderer/SSH gates.
+- [x] Review crash boundaries and ownership, commit, integrate and restore the normal development checkout. No app replacement for this native-only milestone.
 
 ## Representative acceptance assertions
 
