@@ -12,7 +12,7 @@ const paging={pageSize:z.number().int().min(1).max(25).default(10),pageToken:z.s
 const windowSchema={timeMin:dateTime,timeMax:dateTime};
 const checkWindow=args=>{if(Date.parse(args.timeMin)>=Date.parse(args.timeMax))throw new ConnectorError('The end of the time window must be after its start.');};
 const FILE_FIELDS='id,name,mimeType,size,modifiedTime,webViewLink,description';
-async function createWorkspaceSession({catalogId,signal,fetchImpl=globalThis.fetch,getToken,calendarWriteAccess=()=>false}){
+async function createWorkspaceSession({catalogId,signal,fetchImpl=globalThis.fetch,getToken,calendarWriteAccess=()=>false,driveWriteAccess=()=>false}){
  const calendar=catalogId==='google-calendar';if(!calendar&&catalogId!=='google-drive')throw new ConnectorError('Unknown Google API connector.');
  const name=calendar?'Google Calendar':'Google Drive',base=calendar?'https://www.googleapis.com/calendar/v3/':'https://www.googleapis.com/drive/v3/';
  const controller=new AbortController(),server=new McpServer({name:`zQ ${name}`,version:'1.0.0'}),client=new Client({name:'zQ',version:'1.0.0'});let closing;
@@ -43,10 +43,10 @@ async function createWorkspaceSession({catalogId,signal,fetchImpl=globalThis.fet
  };
  const register=(tool,title,description,schema,execute,annotations=read)=>server.registerTool(tool,{title,description,inputSchema:schema.strict(),annotations},async(args,ctx)=>{
   const combined=AbortSignal.any([controller.signal,ctx.mcpReq.signal,AbortSignal.timeout(60000)]);
-  try{const result=await execute(args,(route,params,body,bytes,options)=>request(route,params,combined,body,bytes,options));combined.throwIfAborted();return result?.content?result:{content:[{type:'text',text:boundedJSON(result,90000,'Google API result')}]}}
-  catch(error){return {isError:true,content:[{type:'text',text:!annotations.readOnlyHint&&(!(error instanceof ConnectorError)||combined.aborted)?'The Calendar change could not be confirmed. Check Google Calendar before continuing. Do not retry automatically.':combined.aborted?`${name} request cancelled or timed out.`:error instanceof ConnectorError?error.message:`${name} could not complete this request. Try a smaller result.`}]}}
+  try{const result=await execute(args,(route,params,body,bytes,options)=>request(route,params,combined,body,bytes,options),combined);combined.throwIfAborted();return result?.content?result:{content:[{type:'text',text:boundedJSON(result,90000,'Google API result')}]}}
+  catch(error){return {isError:true,content:[{type:'text',text:!annotations.readOnlyHint&&(!(error instanceof ConnectorError)||combined.aborted)?`The ${calendar?'Calendar change':'upload'} could not be confirmed. Check ${name} before continuing. Do not retry automatically.`:combined.aborted?`${name} request cancelled or timed out.`:error instanceof ConnectorError?error.message:`${name} could not complete this request. Try a smaller result.`}]}}
  });
- let prepareCalendarAction;
+ let prepareCalendarAction,prepareDriveUpload;
  if(calendar){
   prepareCalendarAction=require('./calendar-actions.cjs').calendarActions({register,request,signal:controller.signal,calendarWriteAccess});
   register('list_calendars','List calendars','List calendars accessible to this account, including IDs, primary status, and time zones. Use the calendar time zone when constructing a day window.',z.object(paging),(args,api)=>api('users/me/calendarList',{maxResults:args.pageSize,pageToken:args.pageToken,fields:'nextPageToken,items(id,summary,timeZone,primary,accessRole)'}));
@@ -57,6 +57,7 @@ async function createWorkspaceSession({catalogId,signal,fetchImpl=globalThis.fet
   register('get_event','Read calendar event','Read event details from a selected calendar.',z.object({calendarId,eventId:fileId}),(args,api)=>api(`calendars/${encodeURIComponent(args.calendarId)}/events/${args.eventId}`,{maxAttendees:25}));
   register('free_busy','Check calendar availability','Read busy intervals for up to ten calendars. This does not create or change events.',z.object({...windowSchema,calendarIds:z.array(calendarId).min(1).max(10)}),(args,api)=>{checkWindow(args);return api('freeBusy',undefined,{timeMin:args.timeMin,timeMax:args.timeMax,items:args.calendarIds.map(id=>({id}))})});
  }else{
+  prepareDriveUpload=require('./drive-upload.cjs').driveUpload({register,request,signal:controller.signal,fetchImpl,getToken,driveWriteAccess});
   register('search_files','Search Google Drive','Find files by text using query (e.g. car registration). Optional q accepts native Drive search syntax instead. Searches file contents and names; excludes trashed files. Follow nextPageToken for additional results.',z.object({...paging,query:z.string().max(2048).optional(),q:z.string().max(4096).optional()}),(args,api)=>{
    const escaped=args.query?.replaceAll('\\','\\\\').replaceAll("'","\\'");const filter=args.q??(escaped?`fullText contains '${escaped}'`:'');
    return api('files',{q:'trashed = false'+(filter?` and ${args.q?'('+filter+')':filter}`:''),pageSize:args.pageSize,pageToken:args.pageToken,fields:`nextPageToken,incompleteSearch,files(${FILE_FIELDS})`,supportsAllDrives:true,includeItemsFromAllDrives:true});
@@ -73,6 +74,6 @@ async function createWorkspaceSession({catalogId,signal,fetchImpl=globalThis.fet
    return {content:[{type:'text',text:JSON.stringify({file})},{type:'resource',resource:{uri:`zq-drive://file/${encodeURIComponent(file.name||args.fileId)}`,mimeType:mime||'application/octet-stream',blob:bytes.toString('base64')}}]};
   });
  }
- try{await server.connect(st);await client.connect(ct,{signal:controller.signal,timeout:5000});return {client,close,prepareCalendarAction,verifyAccess:()=>request(calendar?'users/me/calendarList':'about',calendar?{maxResults:1,fields:'items(id)'}:{fields:'user(permissionId)'},controller.signal)}}catch(error){await close();throw error}
+ try{await server.connect(st);await client.connect(ct,{signal:controller.signal,timeout:5000});return {client,close,prepareCalendarAction,prepareDriveUpload,verifyAccess:()=>request(calendar?'users/me/calendarList':'about',calendar?{maxResults:1,fields:'items(id)'}:{fields:'user(permissionId)'},controller.signal)}}catch(error){await close();throw error}
 }
 module.exports={createWorkspaceSession};

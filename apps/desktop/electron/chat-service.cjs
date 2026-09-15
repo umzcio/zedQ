@@ -166,7 +166,12 @@ class ChatService{
    if(skillContext.length)this.change(state=>{const reply=this.conversation(conversationId,state).messages.find(m=>m.id===run.assistantId);reply.skillUsage=skillContext.map(skill=>usage(skill,skillCatalog.some(s=>s.id===skill.id)?'automatic':'selected'));return null});
    const loadSkill=createSkillLoader({host:this,conversationId,run,userId:user.id,project,tools,check});
    const executeDocument=local&&this.artifacts?createDocumentExecutor({artifacts:this.artifacts,check,update:updateTool,signal:run.controller.signal,documents,source:{conversationId,messageId:assistant.id,versionId:assistant.versionId,conversationTitle:this.conversation(conversationId).title,...(project?{projectId:project.id,projectName:project.name}:{})}}):async()=>({error:'Document creation is unavailable.'});
-   const executeConnector=createConnectorExecutor({service:this.connectors,entries:connectorEntries,interactions:this.interactions,conversationId,run,check,update:updateTool});
+   const executeConnector=createConnectorExecutor({service:this.connectors,entries:connectorEntries,interactions:this.interactions,conversationId,run,check,update:updateTool,resolveUploadFile:args=>{
+    if(!this.artifacts||!documents?.available.has(args.artifactId))throw Error('This document is not available in this chat. Select it in Artifacts first.');
+    if(this.artifacts.artifact(args.artifactId).deletedAt)throw Error('Restore this artifact before uploading it.');
+    const file=this.artifacts.file({artifactId:args.artifactId,versionId:args.versionId});
+    return {id:file.id,name:file.name,mime:file.mime,size:file.size,number:file.number,data:file.data};
+   }});
    const onLocalTool=local?call=>executeConnector.has(call.name)?executeConnector.execute(call):call.name==='use_skill'?loadSkill(call):this.interactions.execute(conversationId,run,call,executeDocument):undefined;
    if(onLocalTool)onLocalTool.userWait=this.interactions.waitState(run);
    for(const tool of allowed){if(!await this.interactions.approve(conversationId,run,'hosted:'+tool,'Allow this request to use '+tool.replaceAll('_',' ')+' on the selected provider?')){check();updateTool(reply=>{reply.content+='The requested tool action was declined.'});return}}

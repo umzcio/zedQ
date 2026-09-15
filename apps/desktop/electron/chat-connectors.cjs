@@ -42,7 +42,7 @@ function connectorTools(service,ids){
  if(entries.length>48||Buffer.byteLength(JSON.stringify(entries.map(e=>e.definition)))>80000)throw Error('Too many connector tools are enabled. Choose fewer tools in Settings → Connectors.');
  return entries;
 }
-function createConnectorExecutor({service,entries,interactions,conversationId,run,check,update}){
+function createConnectorExecutor({service,entries,interactions,conversationId,run,check,update,resolveUploadFile}){
  const byName=new Map(entries.map(e=>[e.name,e]));const uncertain=new Set();
  return {definitions:entries.map(e=>e.definition),has:name=>byName.has(name),async execute(call){
   check();const entry=byName.get(call.name);if(!entry)throw Error('Unknown connector tool.');
@@ -55,8 +55,9 @@ function createConnectorExecutor({service,entries,interactions,conversationId,ru
   // MCP annotations are untrusted hints. Require a real grant for external tools,
   // bound to this connector revision; subsequent calls reuse the chat grant.
   const grant='mcp:'+digest([row.id,row.revision,tool.name,tool.inputSchema]);
-  const sending=isBundledGmail(row)&&tool.name==='send_draft',calendarAction=isBundledGoogle(row)&&row.catalogId==='google-calendar'&&['create_event','reschedule_event','cancel_event'].includes(tool.name),reviewed=sending||calendarAction;
-  let prepared;try{if(sending)prepared=await service.prepareGmailSend(row.id,call.arguments.draftId,{signal:run.controller.signal,expectedRevision:row.revision});else if(calendarAction)prepared=await service.prepareCalendarAction(row.id,tool.name,call.arguments,{signal:run.controller.signal,expectedRevision:row.revision})}catch(error){return {isError:true,error:error.message}}
+  const sending=isBundledGmail(row)&&tool.name==='send_draft',calendarAction=isBundledGoogle(row)&&row.catalogId==='google-calendar'&&['create_event','reschedule_event','cancel_event'].includes(tool.name),uploading=isBundledGoogle(row)&&row.catalogId==='google-drive'&&tool.name==='upload_file',reviewed=sending||calendarAction||uploading;
+  let prepared;try{if(sending)prepared=await service.prepareGmailSend(row.id,call.arguments.draftId,{signal:run.controller.signal,expectedRevision:row.revision});else if(uploading){if(!resolveUploadFile)throw Error('Document uploads are unavailable in this chat.');prepared=await service.prepareDriveUpload(row.id,call.arguments,resolveUploadFile(call.arguments),{signal:run.controller.signal,expectedRevision:row.revision})}else if(calendarAction)prepared=await service.prepareCalendarAction(row.id,tool.name,call.arguments,{signal:run.controller.signal,expectedRevision:row.revision})}catch(error){return {isError:true,error:error.message}}
+  try{
   current();
   const detail=prepared?.detail??`${row.name} · ${tool.title||tool.name}\n${JSON.stringify(call.arguments).slice(0,1600)}`;
   if(!await interactions.approve(conversationId,run,grant,detail,{required:true,onceOnly:reviewed,approvalAction:sending?'send_email':prepared?.approvalAction,question:sending?'Send this email?':prepared?.question??`Allow ${row.name} to run ${tool.title||tool.name}?`}))return {isError:true,error:'The user denied this connector action. Do not retry it.'};
@@ -64,6 +65,7 @@ function createConnectorExecutor({service,entries,interactions,conversationId,ru
   update(reply=>recordActivity(reply,{id,kind:'mcp',status:'running',detail:label},['mcp']));
   let received=false;
   try{
+   if(uploading)resolveUploadFile(call.arguments);
    const result=await service.callTool(row.id,tool.name,prepared?.arguments??call.arguments,{signal:run.controller.signal,expectedRevision:row.revision});
    received=true;current();
    const clean=structuredClone(result);if(reviewed&&clean.isError)uncertain.add(call.name);const sources=[],files=[];
@@ -84,6 +86,7 @@ function createConnectorExecutor({service,entries,interactions,conversationId,ru
    uncertain.add(call.name);
    return {isError:true,error:received?'The connector returned a result, but zQ could not display it. The action may already be complete. Do not repeat the action.':'zQ could not confirm the connector’s result. The action may have completed. Do not retry it automatically; check the connected service.'};
   }
+  }finally{prepared?.discard?.()}
  }};
 }
 module.exports={validConnectorIds,selectedConnectors,connectorAvailability,connectorTools,createConnectorExecutor};
