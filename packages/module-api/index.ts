@@ -6,3 +6,6 @@ export * from './host'
 export * from './voice-types'
 export * from './artifact-types'
 export * from './connector-types'
+
+export * from './workspace-limits'
+export * from './note-activity'

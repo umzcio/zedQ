@@ -66,7 +66,7 @@ contextBridge.exposeInMainWorld('zq', Object.freeze({
   send:input=>invoke('chat:send',input), stop:id=>invoke('chat:stop',id),
   subscribe:callback=>{const listener=(_,state)=>callback(state);ipcRenderer.on('chat:changed',listener);return()=>ipcRenderer.removeListener('chat:changed',listener)},
  },
- workspace: { load: () => invoke('workspace:load'), save: state => invoke('workspace:save', state) },
+ workspace: { load: () => invoke('workspace:load'), save: state => invoke('workspace:save', state), saveDraftCopy: input => invoke('workspace:saveDraftCopy', input) },
  files: {
   list: () => invoke('files:list'), open: () => invoke('files:open'),
   edit: (id, body) => invoke('files:edit', id, body), save: id => invoke('files:save', id),

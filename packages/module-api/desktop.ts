@@ -19,7 +19,7 @@ export type DesktopBridge = {
  connectors:ConnectorBridge;
  voice:VoiceBridge;
  artifacts:ArtifactBridge;
- workspace:{load:()=>Promise<Result<WorkspaceState|null>>;save:(state:WorkspaceState)=>Promise<Result<null>>};
+ workspace:{saveDraftCopy:(input:{name:string;text:string})=>Promise<Result<boolean>>;load:()=>Promise<Result<WorkspaceState|null>>;save:(state:WorkspaceState)=>Promise<Result<null>>};
  files:{list:()=>Promise<Result<FileDocument[]>>;open:()=>Promise<Result<FileDocument|null>>;edit:(id:string,body:string)=>Promise<Result<FileDocument>>;save:(id:string)=>Promise<Result<FileDocument>>;saveAs:(id:string)=>Promise<Result<FileDocument|null>>;reload:(id:string)=>Promise<Result<FileDocument|null>>};
  onCommand:(callback:(command:string)=>void)=>()=>void;
  onCloseRequested:(callback:(id:string)=>void)=>()=>void;
@@ -34,5 +34,5 @@ export async function unwrap<T>(result:Promise<Result<T>>):Promise<T> {
 }
 export function freshWorkspace():WorkspaceState {
  const id=crypto.randomUUID()
- return {notes:[{id,title:'Untitled',body:'',project:'',updated:'Just now',pinned:false}],tasks:[],theme:'system',palette:'green',layout:{view:'Notes',selectedNote:id,tabs:[id],sidebar:true,split:false,quickCapture:'',activeFileId:null}}
+ return {notes:[{id,title:'Untitled',body:'',project:'',updated:Date.now(),pinned:false}],tasks:[],theme:'system',palette:'green',layout:{view:'Notes',selectedNote:id,tabs:[id],sidebar:true,split:false,quickCapture:'',activeFileId:null}}
 }

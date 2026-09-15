@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu, session, nativeImage, shell, clipboard } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const { exportFile } = require('./export-file.cjs');
 const {ModuleStore,downloadPackage}=require('./module-store.cjs');
 const { pathToFileURL } = require('node:url');
 const { WorkspaceStore } = require('./storage.cjs');
@@ -94,9 +95,9 @@ app.whenReady().then(async () => {
  handle('artifacts:status',()=>({warning:artifactWarning}));
  for(const method of ['create','update','version','preview','document'])handle(`artifacts:${method}`,input=>artifactService()[method](input));
  handle('artifacts:importGenerated',input=>{const c=chatService().conversation(input.conversationId);const m=require('./chat-lifecycle.cjs').allMessages(c).find(m=>m.id===input.messageId&&(m.generatedFiles??[]).some(f=>f.id===input.fileId));if(!m)throw Error('Generated file not found.');return artifactService().importFile(chatService().generatedFile(input),{conversationId:c.id,messageId:m.id,versionId:require('./chat-lifecycle.cjs').versionId(m),conversationTitle:c.title,generatedFileId:input.fileId})});
- handle('artifacts:save',async input=>{const file=artifactService().file(input);const result=await dialog.showSaveDialog(window,{title:'Download artifact',defaultPath:file.name,properties:['showOverwriteConfirmation']});if(result.canceled||!result.filePath)return false;fs.writeFileSync(result.filePath,Buffer.from(file.data,'base64'),{mode:0o600});return true});
+ handle('artifacts:save',async input=>{const file=artifactService().file(input);const result=await dialog.showSaveDialog(window,{title:'Download artifact',defaultPath:file.name,properties:['showOverwriteConfirmation']});if(result.canceled||!result.filePath)return false;exportFile(result.filePath,Buffer.from(file.data,'base64'));return true});
  for(const method of ['setConversationConnectors','enqueueMessage','updateQueuedMessage','setQueuePaused','respondToInteraction','setApprovalMode','previewSkillResource','importSkill','saveSkill','duplicateSkill','deleteSkill','addSkillFiles','removeSkillFile','searchProjectFiles','searchConversations','inspectContext','reviseMessage','branchConversation','selectMessageVersion','updateConversation','updateProject','saveDraft','saveChatView','previewGeneratedFile','reuseGeneratedFile','generatedFileToProject','saveConnection','saveModelPreferences','deleteConnection','createConversation','configureConversation','renameConversation','deleteConversation','saveProject','deleteProject','moveConversation','addProjectFiles','removeProjectFile','models','testConnection','stop'])handle(`chat:${method}`, input=>chatService()[method](input));
- async function saveText({name,text}){if(!require('./chat-store.cjs').text(name,512)||!require('./chat-store.cjs').text(text,32*1024*1024))throw Error('Invalid text file.');const result=await dialog.showSaveDialog(window,{title:'Save text file',defaultPath:path.basename(name),properties:['showOverwriteConfirmation']});if(result.canceled||!result.filePath)return false;fs.writeFileSync(result.filePath,text,{mode:0o600});return true}
+ async function saveText({name,text}){if(!require('./chat-store.cjs').text(name,512)||!require('./chat-store.cjs').text(text,32*1024*1024))throw Error('Invalid text file.');const result=await dialog.showSaveDialog(window,{title:'Save text file',defaultPath:path.basename(name),properties:['showOverwriteConfirmation']});if(result.canceled||!result.filePath)return false;exportFile(result.filePath,text);return true}
  handle('chat:saveTextFile',saveText);
  const skillCatalog=new (require('./skill-catalog.cjs').SkillCatalog)();
  handle('chat:browseSkills',input=>{chatService().reconcileSkillSources();return skillCatalog.list(input)});
@@ -105,8 +106,8 @@ app.whenReady().then(async () => {
  handle('chat:updateCatalogSkill',input=>{skillCatalog.entry(input?.candidate?.source?.catalogId);return chatService().updateCatalogSkill(input)});
  handle('chat:previewCatalogSkill',id=>skillCatalog.preview(id));
  handle('chat:pickSkillImport',async input=>{const folder=input?.directory===true;const selected=await dialog.showOpenDialog(window,{title:folder?'Import skill folder':'Import skill',properties:[folder?'openDirectory':'openFile'],...(!folder?{filters:[{name:'Agent Skills',extensions:['md','zip','skill','json']}]}:{})});if(selected.canceled||!selected.filePaths.length)return null;const file=selected.filePaths[0],reader=require('./skill-import-file.cjs');return folder?reader.readSkillDirectory(file):require('./skill-package.cjs').parseSkillPackage({name:path.basename(file),bytes:reader.readSkillFile(file)})});
- handle('chat:exportSkill',async id=>{const file=await chatService().exportSkillPackage(id);const result=await dialog.showSaveDialog(window,{title:'Export skill',defaultPath:file.name,properties:['showOverwriteConfirmation']});if(result.canceled||!result.filePath)return false;fs.writeFileSync(result.filePath,file.bytes,{mode:0o600});return true});
- handle('chat:saveSkillResource',async input=>{const file=chatService().skillResource(input);const result=await dialog.showSaveDialog(window,{title:'Save skill file',defaultPath:path.basename(file.name),properties:['showOverwriteConfirmation']});if(result.canceled||!result.filePath)return false;fs.writeFileSync(result.filePath,file.bytes,{mode:0o600});return true});
+ handle('chat:exportSkill',async id=>{const file=await chatService().exportSkillPackage(id);const result=await dialog.showSaveDialog(window,{title:'Export skill',defaultPath:file.name,properties:['showOverwriteConfirmation']});if(result.canceled||!result.filePath)return false;exportFile(result.filePath,file.bytes);return true});
+ handle('chat:saveSkillResource',async input=>{const file=chatService().skillResource(input);const result=await dialog.showSaveDialog(window,{title:'Save skill file',defaultPath:path.basename(file.name),properties:['showOverwriteConfirmation']});if(result.canceled||!result.filePath)return false;exportFile(result.filePath,file.bytes);return true});
  handle('chat:exportConversation',id=>saveText(chatService().exportMarkdown(id)));
  handle('chat:send',input=>chatService().sendMessage(input));
  handle('chat:toolOptions',input=>chatService().toolOptions(input));
@@ -118,7 +119,7 @@ app.whenReady().then(async () => {
   const file=chatService().generatedFile(input);
   const result=await dialog.showSaveDialog(window,{title:'Save generated file',defaultPath:file.name,properties:['showOverwriteConfirmation']});
   if(result.canceled||!result.filePath)return false;
-  fs.writeFileSync(result.filePath,Buffer.from(file.data,'base64'),{mode:0o600});return true;
+  exportFile(result.filePath,Buffer.from(file.data,'base64'));return true;
  });
  handle('attachments:import',input=>attachments.importFiles(input));
  handle('attachments:discard',id=>{attachments.discard(id);return null});
@@ -129,6 +130,7 @@ app.whenReady().then(async () => {
  session.defaultSession.setPermissionCheckHandler((webContents,permission,origin,details)=>permit(webContents,permission,details,'check'));
  handle('workspace:load', () => workspace.load());
  handle('workspace:save', state => { workspace.save(state); return null; });
+ handle('workspace:saveDraftCopy',async input=>{if(!input||typeof input.text!=='string'||!require('./chat-store.cjs').text(input.name,512))throw Error('Invalid recovery file.');const result=await dialog.showSaveDialog(window,{title:'Save unsaved edit',defaultPath:path.basename(input.name),properties:['showOverwriteConfirmation']});if(result.canceled||!result.filePath)return false;exportFile(result.filePath,input.text);return true});
  handle('files:list', () => files.list());
  handle('files:open', async () => {
   const result = await dialog.showOpenDialog(window, { title: 'Open a text file', filters: [{ name: 'All files', extensions: ['*'] }], properties: ['openFile', 'showHiddenFiles'] });

@@ -3,25 +3,27 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
-const MAX_STORE = 32 * 1024 * 1024;
+const limits = require('@zq/module-api/workspace-limits.json');
+const MAX_STORE = limits.storeBytes;
 function fail(code, message) { throw Object.assign(new Error(message), { code }); }
 function object(value) { return value !== null && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype; }
-function text(value, max = 4096) { return typeof value === 'string' && Buffer.byteLength(value, 'utf8') <= max && !value.includes('\0') && Buffer.from(value).toString('utf8') === value; }
+function text(value, max = limits.titleBytes) { return typeof value === 'string' && Buffer.byteLength(value, 'utf8') <= max && !value.includes('\0') && Buffer.from(value).toString('utf8') === value; }
 function keys(value, allowed) { return object(value) && Object.keys(value).every(key => allowed.includes(key)); }
 function validState(state) {
   if (!keys(state, ['notes', 'tasks', 'theme', 'palette', 'layout']) || !['light', 'dark', 'system'].includes(state.theme) || !['green', 'blue', 'red', 'gunmetal'].includes(state.palette)) return false;
   for (const kind of ['notes', 'tasks']) {
-    if (!Array.isArray(state[kind]) || state[kind].length > 10000) return false;
+    if (!Array.isArray(state[kind]) || state[kind].length > limits.records) return false;
     const ids = new Set();
     for (const record of state[kind]) {
       if(!object(record))return false;
       if(record.artifacts!==undefined&&(!Array.isArray(record.artifacts)||record.artifacts.length>50||!record.artifacts.every(a=>a&&typeof a==='object'&&Object.keys(a).every(k=>['artifactId','versionId','name'].includes(k))&&/^[a-f0-9-]{36}$/.test(a.artifactId)&&/^[a-f0-9-]{36}$/.test(a.versionId)&&text(a.name,256))))return false;
-      const allowed = kind === 'notes' ? ['id', 'title', 'body', 'project', 'updated', 'pinned', 'artifacts'] : ['id', 'title', 'description', 'project', 'status', 'priority', 'noteId', 'artifacts'];
+      const allowed = kind === 'notes' ? ['id', 'title', 'body', 'project', 'updated', 'openedAt', 'pinned', 'artifacts'] : ['id', 'title', 'description', 'project', 'status', 'priority', 'noteId', 'artifacts'];
       if (!keys(record, allowed) || !text(record.id, 256) || !record.id || ids.has(record.id) || !text(record.title) || !text(record.project)) return false;
       ids.add(record.id);
       if (kind === 'notes') {
-        if (!text(record.body, 2 * 1024 * 1024) || typeof record.pinned !== 'boolean' || !(text(record.updated, 256) || typeof record.updated === 'number' && Number.isFinite(record.updated))) return false;
-      } else if (!text(record.description, 2 * 1024 * 1024) || !['Inbox', 'Next', 'Doing', 'Waiting', 'Done'].includes(record.status) || !['Normal', 'High'].includes(record.priority) || record.noteId !== undefined && !text(record.noteId, 256)) return false;
+        if (record.openedAt !== undefined && !(typeof record.openedAt === 'number' && Number.isFinite(record.openedAt) && record.openedAt >= 0)) return false;
+        if (!text(record.body, limits.bodyBytes) || typeof record.pinned !== 'boolean' || !(text(record.updated, 256) || typeof record.updated === 'number' && Number.isFinite(record.updated))) return false;
+      } else if (!text(record.description, limits.bodyBytes) || !['Inbox', 'Next', 'Doing', 'Waiting', 'Done'].includes(record.status) || !['Normal', 'High'].includes(record.priority) || record.noteId !== undefined && !text(record.noteId, 256)) return false;
     }
   }
   if (state.layout !== undefined) {
@@ -29,9 +31,9 @@ function validState(state) {
     if (!keys(layout, ['view', 'selectedNote', 'tabs', 'sidebar', 'split', 'quickCapture', 'activeFileId', 'tabOrder'])) return false;
     for (const [key, value] of Object.entries(layout)) {
       if (['sidebar', 'split'].includes(key)) { if (typeof value !== 'boolean') return false; }
-      else if (key === 'tabOrder') { if (!Array.isArray(value) || value.length > 1000 || new Set(value).size !== value.length || !value.every(id => text(id, 261) && /^(note|file):.+$/.test(id))) return false; }
-      else if (key === 'tabs') { if (!Array.isArray(value) || value.length > 1000 || !value.every(id => text(id, 256))) return false; }
-      else if (key === 'quickCapture') { if (!text(value, 2 * 1024 * 1024)) return false; }
+      else if (key === 'tabOrder') { if (!Array.isArray(value) || value.length > limits.tabs || new Set(value).size !== value.length || !value.every(id => text(id, 261) && /^(note|file):.+$/.test(id))) return false; }
+      else if (key === 'tabs') { if (!Array.isArray(value) || value.length > limits.tabs || !value.every(id => text(id, 256))) return false; }
+      else if (key === 'quickCapture') { if (!text(value, limits.bodyBytes)) return false; }
       else if (!(value === null && ['selectedNote', 'activeFileId'].includes(key)) && !text(value, 256)) return false;
     }
   }

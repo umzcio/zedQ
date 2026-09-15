@@ -76,3 +76,6 @@ test('mixed tab order persists and malformed tab orders cannot replace it', t =>
   assert.deepEqual(store.load(), next);
  }
 });
+test('note activity timestamps and legacy dates survive restart; invalid activity is rejected',t=>{
+ const directory=fixture(t),store=new WorkspaceStore(directory),next=state();store.save(next);assert.equal(store.load().notes[0].updated,'Today');next.notes[0].updated=Date.now();next.notes[0].openedAt=next.notes[0].updated+1;store.save(next);assert.deepEqual(new WorkspaceStore(directory).load(),next);for(const openedAt of [-1,NaN,Infinity,'Today'])assert.throws(()=>store.save({...next,notes:[{...next.notes[0],openedAt}]}),{code:'INVALID_STATE'});
+});

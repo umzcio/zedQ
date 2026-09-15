@@ -1,5 +1,5 @@
 import { Component, type ReactNode } from 'react'
-import { unwrap, ModuleSurface, type ModuleDefinition, type ModuleRuntime } from '@zq/module-api'
+import { unwrap, ModuleSurface, useHost, type ModuleDefinition, type ModuleRuntime } from '@zq/module-api'
 import { loadWithRecovery } from './module-recovery'
 export type LoadedModule=Omit<ModuleRuntime,'code'|'css'>&ModuleDefinition
 function execute(code:string):Promise<ModuleDefinition>{
@@ -19,11 +19,24 @@ function execute(code:string):Promise<ModuleDefinition>{
 export async function loadModules():Promise<LoadedModule[]>{
  const records=await unwrap(window.zq.modules.runtime()),loaded:LoadedModule[]=[]
  for(const initial of records){
-  const {record,component}=await loadWithRecovery(initial,record=>execute(record.code),record=>unwrap(window.zq.modules.recover(record.manifest.id,record.manifest.version)))
-  const style=document.createElement('style');style.dataset.module=record.manifest.id;style.textContent=record.css
-  document.head.insertBefore(style,document.head.querySelector('link[rel="stylesheet"]'))
-  const {code,css,...metadata}=record
-  loaded.push({...metadata,...component})
+  let attempted=initial
+  try{
+   const {record,component}=await loadWithRecovery(initial,record=>{attempted=record;return execute(record.code)},record=>unwrap(window.zq.modules.recover(record.manifest.id,record.manifest.version)))
+   const style=document.createElement('style');style.dataset.module=record.manifest.id;style.textContent=record.css
+   document.head.insertBefore(style,document.head.querySelector('link[rel="stylesheet"]'))
+   const {code,css,...metadata}=record
+   loaded.push({...metadata,...component})
+  }catch(error){
+   const {code,css,...metadata}=attempted
+   const message=error instanceof Error?error.message:String(error)
+   // Keep the verified identity in navigation, without mounting any failed
+   // module controller or installing its styles. Shell Settings stays usable.
+   function UnavailableModule(){
+    const host=useHost()
+    return <ModuleSurface><div className="empty-state" role="alert"><h2>{metadata.manifest.title} could not open</h2><p>{message}</p><p>Install a compatible update or choose a rollback in Module Settings.</p><button type="button" onClick={()=>host.openSettings?host.openSettings('modules'):host.navigate('Settings')}>Open Module Settings</button></div></ModuleSurface>
+   }
+   loaded.push({...metadata,error:message,Root:UnavailableModule})
+  }
  }
  return loaded
 }

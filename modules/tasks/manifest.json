@@ -1,6 +1,6 @@
 {
   "id": "zq.tasks",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "apiVersion": 1,
   "title": "Tasks",
   "view": "Tasks",
@@ -11,6 +11,7 @@
     "commands",
     "artifacts",
     "artifacts.v1",
-    "ui.tooltips.v1"
+    "ui.tooltips.v1",
+    "workspace.drafts.v1"
   ]
 }
