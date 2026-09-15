@@ -47,6 +47,8 @@ test('client disconnect preserves process, screen and exclusive input ownership'
   const first = await h.connect()
   const before = await start(h,first)
   assert.ok(before.pid > 0)
+  assert.match(before.output, /"runAsNode":null/)
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(h.root,'agent-args.json'),'utf8')),h.launch.args.slice(1))
   await first.request('claim',{id:h.id})
   const observer = await h.connect()
   for (const [method,params] of [['write',{data:'bad'}],['resize',{cols:90,rows:30}],['stop',{}]]) {
@@ -64,6 +66,11 @@ test('client disconnect preserves process, screen and exclusive input ownership'
     return snap.output.includes('echo:after reconnect') && snap
   })
   assert.equal(after.pid,before.pid)
+  for (const literal of [';','abc;','\\;','abc\\;','é🦉']) {
+    await observer.request('write',{id:h.id,data:literal})
+    await observer.request('write',{id:h.id,data:'\r'})
+    await until(async () => (await observer.request('snapshot',{id:h.id})).output.includes('echo:'+literal))
+  }
   await observer.request('resize',{id:h.id,cols:90,rows:30})
   const sized = await observer.request('snapshot',{id:h.id})
   assert.equal(sized.cols,90)
@@ -176,4 +183,19 @@ test('replay identifies truncated history and rejects future cursors',async t =>
   assert.equal(replay.events.length,256)
   assert.equal((await client.request('events',{after:300})).events.length,0)
   await assert.rejects(client.request('events',{after:301}),{code:'INVALID_REQUEST'})
+})
+
+test('Stop remains unconfirmed while the owned process ignores hang-up',async t => {
+  const h = setup(t)
+  h.launch.args.push('--ignore-hup')
+  const client = await h.connect()
+  const before = await start(h,client)
+  t.after(() => {try {process.kill(before.pid,'SIGKILL')} catch (error) {if (error.code !== 'ESRCH') throw error}})
+  await client.request('claim',{id:h.id})
+  await assert.rejects(client.request('stop',{id:h.id}),{code:'STOP_UNCONFIRMED'})
+  const uncertain = await client.request('snapshot',{id:h.id})
+  assert.equal(uncertain.state,'stopping')
+  assert.equal(uncertain.pid,before.pid)
+  process.kill(before.pid,'SIGKILL')
+  await until(async () => (await client.request('snapshot',{id:h.id})).state === 'stopped')
 })

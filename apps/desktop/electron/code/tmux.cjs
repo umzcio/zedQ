@@ -26,7 +26,7 @@ function createTmux({binary,socket,env = process.env}) {
   }
   const pane = name => `=${name}:0.0`
   return {run,
-    launch:(name,launch,cols = 100,rows = 30) => run(['new-session','-d','-s',name,'-x',String(cols),
+    launch:(name,launch,cols = 100,rows = 30,runAsNode = false) => run(['new-session','-d','-s',name,...(runAsNode ? ['-e','ELECTRON_RUN_AS_NODE=1'] : []),'-x',String(cols),
       '-y',String(rows),'-c',launch.cwd,shellCommand(launch)]),
     async inspect(name) {
       try {
@@ -39,7 +39,7 @@ function createTmux({binary,socket,env = process.env}) {
       } catch (error) {if (error.code === 'TMUX_SESSION_MISSING') return null; throw error}
     },
     capture:async name => (await run(['capture-pane','-p','-t',pane(name),'-S','-200'])).slice(-65536),
-    write:(name,data) => run(['send-keys','-t',pane(name),'-l','--',data]),
+    write:(name,data) => run(['send-keys','-t',pane(name),'-H',...Array.from(Buffer.from(data),byte => byte.toString(16).padStart(2,'0'))]),
     resize:(name,cols,rows) => run(['resize-window','-t',`=${name}:0`,'-x',String(cols),'-y',String(rows)]),
     async stop(name) {
       try {await run(['kill-session','-t',`=${name}`])}

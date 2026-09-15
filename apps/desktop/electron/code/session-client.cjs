@@ -62,10 +62,10 @@ function open(paths) {
 async function connectCodeService({root,tmuxPath,nodePath = process.execPath,env = process.env}) {
   const paths = prepareRoot(root)
   try {return await open(paths)} catch {}
-  const tmux = createTmux({binary:tmuxPath,socket:paths.tmuxSocket,env:{...env,ELECTRON_RUN_AS_NODE:'1'}})
+  const tmux = createTmux({binary:tmuxPath,socket:paths.tmuxSocket,env})
   try {
     await tmux.launch('zq-service',{file:nodePath,cwd:paths.root,
-      args:[path.join(__dirname,'session-service.cjs'),paths.root,tmuxPath]})
+      args:[path.join(__dirname,'session-service.cjs'),paths.root,tmuxPath]},100,30,true)
   } catch (error) {
     // The fixed session name is tmux's atomic singleton claim. A concurrent
     // launcher may have won; never kill or steal its service session.

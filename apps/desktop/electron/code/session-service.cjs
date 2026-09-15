@@ -15,6 +15,11 @@ async function startService(root,tmuxPath) {
   let blocked = false, queue = Promise.resolve(), queued = 0
   const sockets = new Set(), leases = new Map()
   const name = id => 'zq-'+id
+  const processPresent = pid => {
+    if (pid === null) return false
+    try {process.kill(pid,0); return true}
+    catch (error) {return error.code !== 'ESRCH'}
+  }
   function commit(row,state,pid) {
     if (catalog.seq >= Number.MAX_SAFE_INTEGER) fail('STORAGE_UNAVAILABLE')
     row.state = state; row.pid = pid
@@ -25,7 +30,14 @@ async function startService(root,tmuxPath) {
   async function reconcile(row) {
     const live = await tmux.inspect(name(row.id))
     if (live && row.pid !== null && live.pid !== row.pid) fail('SESSION_IDENTITY_CHANGED')
-    if (!live && row.state !== 'stopped') commit(row,'stopped',null)
+    // A closed pane is not proof of process exit: programs may ignore SIGHUP.
+    // Never signal a saved PID (it may have been reused after a host restart).
+    // If it still exists, preserve uncertainty until an operator can reconcile it.
+    if (!live && row.state !== 'stopped') {
+      if (processPresent(row.pid)) {
+        if (row.state !== 'stopping') commit(row,'stopping',row.pid)
+      } else commit(row,'stopped',null)
+    }
     else if (live && row.state === 'starting') commit(row,'running',live.pid)
     else if (live && row.state === 'stopped') fail('SESSION_IDENTITY_CHANGED')
     return live
@@ -84,6 +96,9 @@ async function startService(root,tmuxPath) {
       if (row.state === 'stopped') return {...row}
       commit(row,'stopping',row.pid)
       await tmux.stop(name(id))
+      const deadline = Date.now()+500
+      while (processPresent(row.pid) && Date.now()<deadline)
+        await new Promise(resolve => setTimeout(resolve,25))
       await reconcile(row)
       if (row.state !== 'stopped') fail('STOP_UNCONFIRMED')
       return {...row}
