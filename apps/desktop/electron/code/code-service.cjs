@@ -21,6 +21,7 @@ const METHODS = new Set([
   'duplicateProfile',
   'deleteProfile',
   'createSession',
+  'createSetupSession',
   'updateSession',
   'stopSession',
   'resumeSession',

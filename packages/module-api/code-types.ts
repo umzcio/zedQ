@@ -47,6 +47,8 @@ export interface CodeSession {
   nativeId: string
   nativeIdVerified: boolean
   ownership?: 'owned' | 'external'
+  adapter?: 'claude' | 'terminal'
+  purpose?: 'profile-setup'
   tmuxTarget?: string
   mode: CodeMode
   state: CodeState
@@ -147,6 +149,10 @@ export interface CodeOperations {
   }
   duplicateProfile: { input: { id: string }; output: CodeProfile }
   deleteProfile: { input: { id: string }; output: { ok: true } }
+  createSetupSession: {
+    input: { projectId: string; profileId: string; title?: string }
+    output: CodeSession
+  }
   createSession: {
     input: {
       projectId: string

@@ -136,8 +136,14 @@ class CodeHost {
       }
     }
   }
+  async requireSetupStopped(projectId) {
+    for (const setup of this.catalog.value.sessions.filter(s => s.projectId === projectId && s.purpose === 'profile-setup')) {
+      await this.status(setup)
+      if (!['stopped', 'recoverable'].includes(setup.state)) fail('PROJECT_SESSION_ACTIVE')
+    }
+  }
   async preflight(s, { profile, mode }) {
-    if (s.ownership === 'external' || profile.adapter === 'terminal' || this.catalog.find('profiles', s.profileId).adapter === 'terminal') fail('RESUME_UNSUPPORTED')
+    if (s.ownership === 'external' || s.adapter === 'terminal' || profile.adapter === 'terminal' || this.catalog.find('profiles', s.profileId).adapter === 'terminal') fail('RESUME_UNSUPPORTED')
     buildClaudeResume({ session: s, profile, mode })
     if (
       !fs.statSync(s.cwd).isDirectory() ||
@@ -154,9 +160,9 @@ class CodeHost {
   }
   async start(s, { profile, mode }, fresh) {
     if (!fresh && !nativeExitConfirmed(this.paths.root, s.id, s.mode !== 'chat')) fail('PROCESS_OWNERSHIP_UNKNOWN')
-    if (profile.adapter === 'terminal') {
+    if (s.adapter === 'terminal' || profile.adapter === 'terminal') {
       if (!fresh) fail('RESUME_UNSUPPORTED')
-      const launch = buildTerminalLaunch({ session: s, profile, mode })
+      const launch = buildTerminalLaunch({ session: s, profile: { ...profile, adapter: 'terminal', modes: ['terminal'] }, mode })
       await this.tmux.launch(this.name(s.id), launch, 100, 30)
       const live = await this.tmux.inspect(this.name(s.id))
       if (!live) fail('TARGET_NOT_READY')
@@ -399,7 +405,7 @@ class CodeHost {
       if (this.catalog.value.sessions.some(s => s.ownership === 'external' && s.tmuxTarget === input.target && s.tmuxIdentity === info.identity)) fail('ALREADY_ATTACHED')
       const s = { id: randomUUID(), projectId: project.id, hostId: project.hostId, cwd: project.cwd, profileId: '',
         nativeId: '', nativeIdVerified: false, mode: 'terminal', state: 'ready', revision: 0, title: input.title || info.name,
-        createdAt: Date.now(), updatedAt: Date.now(), archivedAt: null, pid: null, error: null, ownership: 'external', tmuxTarget: input.target, tmuxIdentity: info.identity }
+        createdAt: Date.now(), updatedAt: Date.now(), archivedAt: null, pid: null, error: null, ownership: 'external', adapter: 'terminal', tmuxTarget: input.target, tmuxIdentity: info.identity }
       this.catalog.value.sessions.push(s); this.catalog.save(); this.leases.set(s.id, owner)
       return s
     }
@@ -431,8 +437,10 @@ class CodeHost {
       ].includes(method)
     )
       return this.catalog[method](input)
-    if (method === 'createSession') {
-      keys(input, ['projectId', 'profileId', 'mode', 'title'])
+    if (method === 'createSession' || method === 'createSetupSession') {
+      const setup = method === 'createSetupSession'
+      keys(input, setup ? ['projectId', 'profileId', 'title'] : ['projectId', 'profileId', 'mode', 'title'])
+      if (setup) input = { ...input, mode: 'terminal' }
       if (
         !['chat', 'terminal'].includes(input.mode) ||
         (input.title !== undefined && !text(input.title, 200))
@@ -441,20 +449,30 @@ class CodeHost {
       if (this.catalog.value.sessions.length >= 32) fail('LIMIT_REACHED')
       const project = this.catalog.find('projects', input.projectId),
         profile = this.catalog.find('profiles', input.profileId)
-      if (!profile.modes.includes(input.mode)) fail('MODE_UNSUPPORTED')
+      if (!setup && !profile.modes.includes(input.mode)) fail('MODE_UNSUPPORTED')
+      if (!setup) await this.requireSetupStopped(project.id)
+      if (setup) {
+        for (const existing of this.catalog.value.sessions.filter(s => s.projectId === project.id)) {
+          await this.status(existing)
+          if (!['stopped', 'recoverable'].includes(existing.state) || !nativeExitConfirmed(this.paths.root, existing.id, existing.mode !== 'chat')) fail('PROJECT_SESSION_ACTIVE')
+        }
+      }
+      const adapter = setup ? 'terminal' : profile.adapter || 'claude'
       const s = {
         id: randomUUID(),
         projectId: project.id,
         hostId: project.hostId,
         cwd: project.cwd,
         profileId: profile.id,
-        nativeId: profile.adapter === 'terminal' ? '' : randomUUID(),
+        nativeId: adapter === 'terminal' ? '' : randomUUID(),
+        adapter,
+        ...(setup ? { purpose: 'profile-setup' } : {}),
         ownership: 'owned',
         nativeIdVerified: false,
         mode: input.mode,
         state: 'starting',
         revision: 0,
-        title: input.title || 'New session',
+        title: input.title || (setup ? 'Profile setup · ' + profile.name : 'New session'),
         createdAt: Date.now(),
         updatedAt: Date.now(),
         archivedAt: null,
@@ -467,7 +485,7 @@ class CodeHost {
       try {
         const h = await this.start(s, { profile, mode: s.mode }, true)
         await this.ready(h)
-        s.nativeIdVerified = profile.adapter !== 'terminal'
+        s.nativeIdVerified = adapter !== 'terminal'
         s.state = 'ready'
         this.catalog.save()
       } catch (e) {
@@ -535,8 +553,9 @@ class CodeHost {
     }
     this.own(owner, s.id)
     if (['stopSession', 'resumeSession', 'switchSession'].includes(method)) {
+      if (method !== 'stopSession') await this.requireSetupStopped(s.projectId)
       if (s.ownership === 'external') fail('EXTERNAL_SESSION_OWNERSHIP')
-      if (method !== 'stopSession' && this.catalog.find('profiles', s.profileId).adapter === 'terminal') fail('RESUME_UNSUPPORTED')
+      if (method !== 'stopSession' && (s.adapter === 'terminal' || this.catalog.find('profiles', s.profileId).adapter === 'terminal')) fail('RESUME_UNSUPPORTED')
       if (input.expectedRevision !== s.revision) fail('STALE_REVISION')
       await this.status(s)
       if (method === 'switchSession' && ['busy', 'approval'].includes(s.state))

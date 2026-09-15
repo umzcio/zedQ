@@ -14,6 +14,12 @@ Connect copies the shipped JavaScript service bundle to an immutable content-add
 
 Host-local launcher files/functions are explicitly configured on each host. The `terminal` profile adapter runs exactly that launcher with no injected Claude arguments. Generic or external terminals have no verified native conversation and cannot switch to Chat, switch profiles, or resume a stopped process. Existing external tmux sessions are discovered on the host's default tmux server. Their exact tmux session ID and server/creation identity are retained; an already attached session is not seized. Native identity adoption from an external Claude terminal is deliberately unavailable without independent validation.
 
+## Native profile setup
+
+`createSetupSession` opens an explicitly requested, owned terminal for the selected profile's launcher with no injected Claude or resume arguments. It lets the user complete the CLI's own folder-trust or login flow. The session records `adapter: terminal` and `purpose: profile-setup`; it has no native conversation identity and cannot switch interfaces/profiles or resume after Stop. No profile clone, automatic trust decision, permission bypass, or authentication action is performed.
+
+Setup requires the project's existing controllers to be stopped with known ownership. While setup is running, original conversation resume and new work are rejected with `PROJECT_SESSION_ACTIVE`. Stop setup, return to the original session, then retry its exact native ID. This also handles first-folder trust prompts that appear before Claude emits its SessionStart receipt: an unverified handoff never gains ordinary terminal input permission just to bypass readiness.
+
 ## Preview
 
 Only credential-free HTTP(S) loopback URLs are accepted. Remote forwarding binds `127.0.0.1` through an app-owned SSH process with multiplex sharing disabled, automatic port allocation, and explicit forwarding readiness. Stop, disconnect, or app close terminates only this app's forwarding process. Reopen creates a new forward. HTTPS applications may require a certificate trusted for `127.0.0.1`; forwarding preserves HTTPS rather than weakening TLS. Embedding restrictions require the UI's Open in browser action. Renderer sandbox/CSP is enforced by the shell and Code UI.
