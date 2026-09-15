@@ -9,3 +9,4 @@ export * from './connector-types'
 
 export * from './workspace-limits'
 export * from './note-activity'
+export * from './code-types'

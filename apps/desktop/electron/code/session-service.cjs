@@ -4,6 +4,7 @@ const net = require('node:net')
 const {timingSafeEqual} = require('node:crypto')
 const {prepareRoot,readCatalog,writeCatalog,uuid,fail} = require('./service-storage.cjs')
 const {createTmux,shellCommand} = require('./tmux.cjs')
+const {CodeHost} = require('./code-host.cjs')
 
 async function startService(root,tmuxPath) {
   process.umask(0o077)
@@ -12,6 +13,7 @@ async function startService(root,tmuxPath) {
   const owner = await tmux.inspect('zq-service')
   if (owner?.pid !== process.pid) fail('SERVICE_OWNER_REQUIRED')
   const catalog = readCatalog(paths)
+  const codeHost = new CodeHost({paths,tmux})
   let blocked = false, queue = Promise.resolve(), queued = 0
   const sockets = new Set(), leases = new Map()
   const name = id => 'zq-'+id
@@ -43,6 +45,7 @@ async function startService(root,tmuxPath) {
     return live
   }
   async function dispatch(socket,method,params) {
+    if (method.startsWith('code:')) return codeHost.dispatch(socket,method.slice(5),params)
     if (method === 'ping') return {version:1,pid:process.pid}
     if (blocked) fail('STORAGE_UNAVAILABLE')
     if (!params || typeof params !== 'object' || Array.isArray(params)) fail('INVALID_REQUEST')
@@ -141,7 +144,7 @@ async function startService(root,tmuxPath) {
     }
     socket.on('error',() => {})
     socket.on('close',() => {
-      clearTimeout(timer); sockets.delete(socket)
+      clearTimeout(timer); sockets.delete(socket); codeHost.release(socket)
       for (const [id,owner] of leases) if (owner === socket) leases.delete(id)
     })
     socket.on('data',data => {
@@ -159,6 +162,7 @@ async function startService(root,tmuxPath) {
         }
         if (!message || !Number.isSafeInteger(message.id) || typeof message.method !== 'string'
           || pending >= 16 || queued >= 64) {socket.destroy(); return}
+        if (message.method.startsWith('code:') && !['code:snapshot','code:events','code:stopSession'].includes(message.method) && codeHost.inputBlocked(message.params?.id)) {send({id:message.id,error:'RECONCILIATION_REQUIRED'}); continue}
         pending++; queued++
         queue = queue.then(async () => {
           try {
@@ -168,7 +172,7 @@ async function startService(root,tmuxPath) {
           } catch (error) {
             const allowed = ['INVALID_REQUEST','UNKNOWN_SESSION','LEASE_HELD','LEASE_REQUIRED','UNKNOWN_METHOD',
               'SESSION_LIMIT','SESSION_NOT_RUNNING','SESSION_IDENTITY_CHANGED','STORAGE_UNAVAILABLE',
-              'TMUX_FAILED','TMUX_SESSION_MISSING','STOP_UNCONFIRMED']
+              'TMUX_FAILED','TMUX_SESSION_MISSING','STOP_UNCONFIRMED','NOT_FOUND','PROJECT_HAS_SESSIONS','PROFILE_IN_USE','LIMIT_REACHED','MODE_UNSUPPORTED','STALE_REVISION','SESSION_NOT_STOPPED','SESSION_NOT_READY','RECONCILIATION_REQUIRED','SHARED_HISTORY_UNCONFIRMED','IDENTITY_UNVERIFIED','PREFLIGHT_FAILED','SESSION_BUSY','UNKNOWN_PERMISSION','RUNNER_UNAVAILABLE','SWITCH_IN_PROGRESS']
             send({id:message.id,error:allowed.includes(error.code) ? error.code : 'SERVICE_OPERATION_FAILED'})
           } finally {pending--; queued--}
         })
