@@ -99,10 +99,8 @@
 .thinking-dots{display:inline-flex;align-items:center;gap:3px;margin-right:3px}
 .thinking-dots i{display:block;width:4px;height:4px;background:var(--muted);border-radius:50%;animation:zq-thinking 1.2s ease-in-out infinite}
 .thinking-dots i:nth-child(2){animation-delay:150ms}.thinking-dots i:nth-child(3){animation-delay:300ms}
-.chat-thinking-active{animation:zq-thinking-label 1.8s ease-in-out infinite}
 .model-popover-heading button:disabled>svg{animation:zq-refresh 900ms linear infinite}
 @keyframes zq-thinking{0%,65%,100%{opacity:.35;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
-@keyframes zq-thinking-label{0%,100%{opacity:.55}50%{opacity:1}}
 @media(prefers-reduced-motion:reduce){
  .chat-view *,[data-slot=popover-content],[data-slot=dialog-content],[data-slot=dialog-overlay],[data-slot=select-content]{animation:none!important;transition:none!important;scroll-behavior:auto!important}
 }
@@ -117,9 +115,10 @@
 
 @keyframes zq-refresh{to{transform:rotate(360deg)}}
 .thinking-mark{display:inline-flex;align-items:center;justify-content:center;width:30px;height:32px;margin:2px 0 12px;color:var(--accent-text);font-size:30px;font-weight:650;line-height:1;font-style:italic;letter-spacing:-2px}
-.thinking-mark>span{display:inline-block;transform-origin:50% 65%;animation:zq-thinking-mark 1.6s cubic-bezier(.45,0,.25,1) infinite}
+.thinking-mark>span{display:inline-block;animation:zq-thinking-mark 2s ease-in-out infinite}
 .chat-response-status{font-size:11px;color:var(--muted);margin-bottom:10px}
-@keyframes zq-thinking-mark{0%,100%{transform:translateY(0) rotate(-5deg) scale(1);opacity:.55}45%{transform:translateY(-3px) rotate(5deg) scale(1.08);opacity:1}70%{transform:translateY(0) rotate(-2deg) scale(1);opacity:.8}}
+@keyframes zq-thinking-mark{0%,100%{opacity:.5}50%{opacity:1}}
+@media(prefers-reduced-motion:reduce){.thinking-mark>span{animation:none;opacity:1}}
 /* Compact attachments stay beside the draft they belong to. */
 .chat-view{position:relative}
 .attachment-tray{display:flex;flex-wrap:wrap;gap:8px;padding:2px 0 14px;max-height:210px;overflow:auto}
