@@ -113,3 +113,10 @@ Chat 1.16.0 requires `artifacts.fonts.v1` for the expanded native typography sch
 ## Shared tooltip capability
 
 The app-wide tooltip release adds `ui.tooltips.v1` to each updated module's required capabilities. It supplies shared tooltip exports and styles in the desktop shell. Older shells reject these newer module packages before loading their code because the capability exceeds their bundled permissions. Install the accompanying desktop build first; subsequent compatible module updates can continue independently. No native storage schema changed.
+
+
+### Workspace recovery and activity release
+
+HQ 1.0.3 and Notes 1.1.4 require `workspace.activity.v1`; Tasks 1.1.3 requires `workspace.drafts.v1`. Ship them with this shell update, which adds the shared activity/validation exports, optional numeric `Note.openedAt`, and shell-owned `workspace.saveDraftCopy`. Older stored note date strings remain readable. Install these three module versions together: an older installed HQ package can otherwise display numeric edit timestamps as raw text. The module store prefers an installed package over a newer bundled fallback, so verify running versions after staging updates and restarting. Workspace schemas are owned by the shell and are never rolled back by module rollback.
+
+Invalid workspace text stays in the open renderer; the shell persists the valid projection and blocks normal close while rejected edits remain. Recovery copies use their own native export path so the workspace size limit does not prevent rescuing a larger draft. This does not provide crash recovery for rejected edits. Import exhaustion now leaves an unavailable module surface with access to Module Settings; it does not stop healthy modules or bypass signature/capability checks.
