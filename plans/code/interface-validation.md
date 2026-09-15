@@ -13,7 +13,7 @@ All interactive mutations used an isolated zQ data directory and a temporary Git
 
 ## Verification scope and limits
 
-The complete desktop suite passed with 890 tests passing and 52 explicitly skipped on the final integrated feature tree. Final integration verification is recorded in the implementation ledger.
+The complete desktop suite passed with 890 tests passing and 52 explicitly skipped on the final integrated feature tree. The same full suite passed again on main after integration. The production build and ARM64 app package succeeded. Packaged-app checks verified all five signed bundled modules, no packaged private signing key, native PTY execution/detach/replay/stop, Code navigation, discovery of the six local profiles, and a real owned terminal session rendering in xterm. The single-Code module build also passed against shell API 1.
 
 SSH bootstrap, transport, persistence and filesystem behavior were exercised through an isolated transport fixture. A real remote host, its authentication and live SSH port forwarding were not available for end-to-end verification. Local prerequisites are tmux and the selected CLI; remote hosts also require Node, zsh and configured SSH trust/authentication.
 
