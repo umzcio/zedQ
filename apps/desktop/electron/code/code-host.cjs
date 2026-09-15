@@ -64,7 +64,7 @@ class CodeHost {
     return 'zqc-' + id
   }
   release(owner) {
-    for (const [id, v] of this.externalOwners) if (v === owner) this.externalOwners.delete(id)
+    for (const [id, v] of this.externalOwners) if (v.owner === owner) this.externalOwners.delete(id)
     for (const [id, v] of this.leases) if (v === owner) this.leases.delete(id)
   }
   own(owner, id) {
@@ -80,7 +80,7 @@ class CodeHost {
     const live = await this.tmux.inspect(this.name(s.id))
     if (live && s.pid && live.pid !== s.pid) fail('SESSION_IDENTITY_CHANGED')
     if (!live) {
-      if (s.mode === 'chat' && !nativeExitConfirmed(this.paths.root, s.id)) {
+      if (!nativeExitConfirmed(this.paths.root, s.id, s.mode !== 'chat')) {
         if (s.state !== 'switching' || s.error !== 'PROCESS_OWNERSHIP_UNKNOWN') {
           s.state = 'switching'; s.error = 'PROCESS_OWNERSHIP_UNKNOWN'; this.catalog.save()
         }
@@ -153,7 +153,7 @@ class CodeHost {
     if (!s.nativeIdVerified) fail('IDENTITY_UNVERIFIED')
   }
   async start(s, { profile, mode }, fresh) {
-    if (!fresh && s.mode === 'chat' && !nativeExitConfirmed(this.paths.root, s.id)) fail('PROCESS_OWNERSHIP_UNKNOWN')
+    if (!fresh && !nativeExitConfirmed(this.paths.root, s.id, s.mode !== 'chat')) fail('PROCESS_OWNERSHIP_UNKNOWN')
     if (profile.adapter === 'terminal') {
       if (!fresh) fail('RESUME_UNSUPPORTED')
       const launch = buildTerminalLaunch({ session: s, profile, mode })
@@ -367,6 +367,7 @@ class CodeHost {
         if (e.code !== 'ESRCH') present = true
       }
       if (!present && !(await this.tmux.inspect(this.name(s.id)))) {
+        if (!nativeExitConfirmed(this.paths.root, s.id, mode !== 'chat')) fail('STOP_UNCONFIRMED')
         s.pid = null
         this.session(s.id).pid = null
         return
@@ -487,7 +488,7 @@ class CodeHost {
     }
     if (method === 'releaseSession') {
       if (this.leases.get(s.id) === owner) this.leases.delete(s.id)
-      if (this.externalOwners.get(s.id) === owner) this.externalOwners.delete(s.id)
+      if (this.externalOwners.get(s.id)?.owner === owner) this.externalOwners.delete(s.id)
       return { ok: true }
     }
     if (method === 'events') {
@@ -596,14 +597,18 @@ class CodeHost {
         const info = await this.external.inspect(s.tmuxTarget)
         if (!info || info.identity !== s.tmuxIdentity) fail('SESSION_IDENTITY_CHANGED')
         if (method === 'attachTerminal') {
-          if (info.attached && this.externalOwners.get(s.id) !== owner) fail('EXTERNAL_TERMINAL_IN_USE')
-          this.externalOwners.set(s.id, owner)
+          if (info.attached && this.externalOwners.get(s.id)?.owner !== owner) fail('EXTERNAL_TERMINAL_IN_USE')
+          this.externalOwners.set(s.id, { owner, attachmentId: input.attachmentId })
         }
         if (method === 'writeTerminal') await this.external.write(s.tmuxTarget, input.data)
       } else if (method === 'writeTerminal') await this.tmux.write(this.name(s.id), input.data)
       return { ok: true }
     }
-    if (method === 'detachTerminal') return { ok: true }
+    if (method === 'detachTerminal') {
+      const attachment = this.externalOwners.get(s.id)
+      if (attachment?.owner === owner && (input.attachmentId === undefined || attachment.attachmentId === input.attachmentId)) this.externalOwners.delete(s.id)
+      return { ok: true }
+    }
     if (s.mode !== 'chat') fail('MODE_UNSUPPORTED')
     if (s.state === 'switching') fail('RECONCILIATION_REQUIRED')
     if (method === 'sendMessage')

@@ -33,6 +33,7 @@ function discoverAliases(file=path.join(os.homedir(),'.ssh/config')) {
 function runSSH(alias, argv, input, spawnProcess=spawn) {
   return new Promise((resolve,reject)=>{
     const child=spawnProcess('/usr/bin/ssh',sshArgs(alias,argv),{stdio:['pipe','pipe','pipe']})
+    child.stdout.setEncoding('utf8')
     let output='',failed=false
     const timer=setTimeout(()=>{failed=true;child.kill();reject(Object.assign(new Error('SSH_CONNECTION_FAILED'),{code:'SSH_CONNECTION_FAILED'}))},20000)
     child.stdout.on('data',b=>{output+=b.toString();if(Buffer.byteLength(output)>65536){failed=true;child.kill()}})
@@ -44,7 +45,7 @@ function runSSH(alias, argv, input, spawnProcess=spawn) {
 }
 // Fixed installer, fed only shipped code bytes. No shell interpolation, credentials,
 // renderer-selected install path, or remote startup files are copied into zQ.
-const INSTALL = `const fs=require('fs'),path=require('path'),os=require('os'),crypto=require('crypto');let raw='';process.stdin.on('data',b=>{raw+=b;if(raw.length>2097152)process.exit(2)});process.stdin.on('end',()=>{const files=JSON.parse(raw);const base=path.join(os.homedir(),'.local/share/zq');fs.mkdirSync(base,{recursive:true,mode:448});for(const dir of [base,path.join(base,'code'),path.join(base,'code','bundles')]){fs.mkdirSync(dir,{recursive:true,mode:448});const s=fs.lstatSync(dir);if(!s.isDirectory()||s.isSymbolicLink()||s.uid!==process.getuid()||(s.mode&63))process.exit(3)}const digest=crypto.createHash('sha256').update(raw).digest('hex');const dest=path.join(base,'code','bundles',digest);fs.mkdirSync(dest,{mode:448,recursive:true});const st=fs.lstatSync(dest);if(!st.isDirectory()||st.isSymbolicLink()||st.uid!==process.getuid()||(st.mode&63))process.exit(3);for(const [name,content] of Object.entries(files)){if(!/^[a-z-]+\\.cjs$/.test(name))process.exit(4);const file=path.join(dest,name);if(fs.existsSync(file)){const s=fs.lstatSync(file);if(!s.isFile()||s.isSymbolicLink()||s.uid!==process.getuid()||(s.mode&63)||s.nlink!==1||fs.readFileSync(file,'utf8')!==content)process.exit(5)}else fs.writeFileSync(file,content,{flag:'wx',mode:384})}process.stdout.write(JSON.stringify({bridge:path.join(dest,'remote-bridge.cjs')}))})`
+const INSTALL = `const fs=require('fs'),path=require('path'),os=require('os'),crypto=require('crypto');let raw='';process.stdin.setEncoding('utf8');process.stdin.on('data',b=>{raw+=b;if(raw.length>2097152)process.exit(2)});process.stdin.on('end',()=>{const files=JSON.parse(raw);const base=path.join(os.homedir(),'.local/share/zq');fs.mkdirSync(base,{recursive:true,mode:448});for(const dir of [base,path.join(base,'code'),path.join(base,'code','bundles')]){fs.mkdirSync(dir,{recursive:true,mode:448});const s=fs.lstatSync(dir);if(!s.isDirectory()||s.isSymbolicLink()||s.uid!==process.getuid()||(s.mode&63))process.exit(3)}const digest=crypto.createHash('sha256').update(raw).digest('hex');const dest=path.join(base,'code','bundles',digest);fs.mkdirSync(dest,{mode:448,recursive:true});const st=fs.lstatSync(dest);if(!st.isDirectory()||st.isSymbolicLink()||st.uid!==process.getuid()||(st.mode&63))process.exit(3);for(const [name,content] of Object.entries(files)){if(!/^[a-z-]+\\.cjs$/.test(name))process.exit(4);const file=path.join(dest,name);if(fs.existsSync(file)){const s=fs.lstatSync(file);if(!s.isFile()||s.isSymbolicLink()||s.uid!==process.getuid()||(s.mode&63)||s.nlink!==1||fs.readFileSync(file,'utf8')!==content)process.exit(5)}else fs.writeFileSync(file,content,{flag:'wx',mode:384})}process.stdout.write(JSON.stringify({bridge:path.join(dest,'remote-bridge.cjs')}))})`
 function bundle(){return Object.fromEntries(fs.readdirSync(__dirname).filter(n=>/^[a-z-]+\.cjs$/.test(n)).sort().map(n=>[n,fs.readFileSync(path.join(__dirname,n),'utf8')]))}
 function openRemote(alias, bridge, spawnProcess=spawn) {
   return new Promise((resolve,reject)=>{
@@ -58,11 +59,12 @@ function openRemote(alias, bridge, spawnProcess=spawn) {
       if(child.exitCode!==null||child.killed)return Promise.reject(error('SERVICE_DISCONNECTED'))
       return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{pending.delete(id);child.kill();reject(error('SERVICE_REQUEST_TIMEOUT'))},75000);pending.set(id,{resolve,reject,timer});child.stdin.write(data)})
     }}
+    child.stdout.setEncoding('utf8')
     child.stderr.on('data',()=>{});child.stdin.on('error',()=>{})
     child.on('error',()=>{clearTimeout(timer);reject(error('SSH_CONNECTION_FAILED'))})
     child.on('close',()=>{clearTimeout(timer);if(!ready)reject(error('SSH_CONNECTION_FAILED'));for(const p of pending.values()){clearTimeout(p.timer);p.reject(error('SERVICE_DISCONNECTED'))}pending.clear()})
     child.stdout.on('data',chunk=>{
-      buffer+=chunk.toString();if(Buffer.byteLength(buffer)>512*1024){child.kill();return}
+      buffer+=chunk;if(Buffer.byteLength(buffer)>512*1024){child.kill();return}
       let end;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);let m
         try{m=JSON.parse(line)}catch{child.kill();return}
         if(!ready){if(!m.ready||!path.posix.isAbsolute(m.root)||!path.posix.isAbsolute(m.tmuxPath)){child.kill();return}ready=true;metadata=m;clearTimeout(timer);resolve(client)}

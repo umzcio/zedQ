@@ -2,7 +2,8 @@ const fs = require('node:fs'),
   path = require('node:path'),
   os = require('node:os')
 const { connectCodeService } = require('./session-client.cjs')
-const { prepareRoot, fail } = require('./service-storage.cjs')
+const { randomUUID } = require('node:crypto')
+const { prepareRoot, fail, uuid } = require('./service-storage.cjs')
 const { RemoteHosts, sshArgs, discoverAliases } = require('./remote.cjs')
 const { Previews } = require('./preview.cjs')
 const { resolveFile } = require('./workspace.cjs')
@@ -79,6 +80,7 @@ class CodeService {
     this.nodePath = nodePath
     this.closed = false
     this.terminals = new Map()
+    this.attachments = new Map()
     this.seq = -1
     this.client = null
     this.connecting = null
@@ -199,12 +201,16 @@ class CodeService {
     }
     return s
   }
-  detach(id) {
+  detach(id, attachmentId) {
+    if (attachmentId !== undefined && this.attachments.get(id)?.id !== attachmentId) return
+    const attached = this.attachments.has(id) || this.terminals.has(id)
+    this.attachments.delete(id)
     const p = this.terminals.get(id)
     if (p) {
       this.terminals.delete(id)
       p.kill()
     }
+    return attached
   }
   async invoke(method, input) {
     if (!METHODS.has(method)) fail('UNKNOWN_METHOD')
@@ -214,6 +220,7 @@ class CodeService {
       (!input || typeof input !== 'object' || Array.isArray(input))
     )
       fail('INVALID_REQUEST')
+    if (['attachTerminal','detachTerminal','writeTerminal','resizeTerminal'].includes(method) && input?.attachmentId !== undefined && !uuid(input.attachmentId)) fail('INVALID_REQUEST')
     if (method === 'snapshot') return this.snapshot()
     if (method === 'discoverHosts') return discoverAliases()
     if (method === 'listPreviews') return this.previews.list()
@@ -268,14 +275,18 @@ class CodeService {
       return { ok: true }
     }
     if (method === 'attachTerminal') {
-      await this.request(method, input)
       if (!this.ptyAvailable) fail('PTY_UNAVAILABLE')
       this.detach(input.id)
+      const attachment = { id: input.attachmentId || randomUUID() }
+      this.attachments.set(input.id, attachment)
+      try {
+      await this.request(method, { ...input, attachmentId: attachment.id })
       const paths = prepareRoot(this.directory)
       const env = { ...process.env, TERM: 'xterm-256color' }
       delete env.TMUX
       delete env.ELECTRON_RUN_AS_NODE
       const snapshot = await this.snapshot()
+      if (this.closed || this.attachments.get(input.id) !== attachment) fail('ATTACHMENT_SUPERSEDED')
       const session = snapshot.sessions.find(s => s.id === input.id)
       if (!session) fail('NOT_FOUND')
       const external = session.ownership === 'external'
@@ -291,15 +302,17 @@ class CodeService {
         name: 'xterm-256color', cols: input.cols, rows: input.rows, cwd: this.directory, env
       })
       this.terminals.set(input.id, terminal)
-      this.onTerminal({ sessionId: input.id, data: '', reset: true })
+      this.onTerminal({ sessionId: input.id, attachmentId: attachment.id, data: '', reset: true })
       let queued = '',
         scheduled = false
       terminal.onData((data) => {
+        if (this.terminals.get(input.id) !== terminal) return
         queued += data
         if (Buffer.byteLength(queued) > 262144) {
           this.detach(input.id)
           this.onTerminal({
             sessionId: input.id,
+            attachmentId: attachment.id,
             data: '\r\n[Terminal detached: output exceeded buffer. Reconnect to repaint.]\r\n'
           })
           return
@@ -309,25 +322,33 @@ class CodeService {
           setImmediate(() => {
             scheduled = false
             if (queued && this.terminals.get(input.id) === terminal)
-              this.onTerminal({ sessionId: input.id, data: queued })
+              this.onTerminal({ sessionId: input.id, attachmentId: attachment.id, data: queued })
             queued = ''
           })
         }
       })
       terminal.onExit(() => {
-        if (this.terminals.get(input.id) === terminal)
+        if (this.terminals.get(input.id) === terminal) {
           this.terminals.delete(input.id)
+          this.attachments.delete(input.id)
+        }
       })
-      return { ok: true }
+      return { ok: true, attachmentId: attachment.id }
+      } catch (error) {
+        if (this.attachments.get(input.id) === attachment) this.detach(input.id, attachment.id)
+        throw error
+      }
     }
     if (method === 'detachTerminal') {
-      this.detach(input?.id)
-      return this.request('releaseSession', input)
+      if (this.detach(input?.id, input?.attachmentId)) await this.request('detachTerminal', input)
+      return { ok: true }
     }
     if (['writeTerminal', 'resizeTerminal'].includes(method)) {
-      await this.request(method, input)
+      if (input.attachmentId !== undefined && this.attachments.get(input.id)?.id !== input.attachmentId) fail('ATTACHMENT_SUPERSEDED')
       const terminal = this.terminals.get(input.id)
       if (!terminal) fail('TERMINAL_NOT_ATTACHED')
+      await this.request(method, input)
+      if (this.terminals.get(input.id) !== terminal) fail('ATTACHMENT_SUPERSEDED')
       if (method === 'resizeTerminal') terminal.resize(input.cols, input.rows)
       return { ok: true }
     }
@@ -349,6 +370,7 @@ class CodeService {
   close() {
     this.closed = true
     clearInterval(this.timer)
+    this.attachments.clear()
     for (const id of this.terminals.keys()) this.detach(id)
     this.client?.close()
     this.remotes.close()

@@ -52,3 +52,12 @@ test('generic adapter passes launcher verbatim without Claude identity or struct
  assert.deepEqual(launch.args.slice(3),['/tmp/a b.zsh','local-model']);assert.ok(!launch.args.includes('--resume'))
  assert.throws(()=>buildTerminalLaunch({profile:{adapter:'terminal'},mode:'chat'}),{code:'MODE_UNSUPPORTED'})
 })
+test('SSH stream decoder preserves multibyte JSON split across arbitrary transport chunks',async()=>{
+ const {openRemote}=require('../electron/code/remote.cjs'),{PassThrough,Writable}=require('node:stream')
+ const child=new EventEmitter();child.stdout=new PassThrough();child.stderr=new PassThrough();child.exitCode=null;child.kill=()=>{child.killed=true;child.emit('close',0)}
+ child.stdin=new Writable({write(buffer,_encoding,done){const request=JSON.parse(buffer.toString());const bytes=Buffer.from(JSON.stringify({id:request.id,result:{text:'é中文🙂'}})+'\n');for(const byte of bytes)child.stdout.write(Buffer.from([byte]));done()}})
+ const opened=openRemote('fixture','/home/me/remote-bridge.cjs',()=>child)
+ const ready=Buffer.from(JSON.stringify({ready:true,root:'/home/é/runtime',tmuxPath:'/usr/bin/tmux'})+'\n');for(const byte of ready)child.stdout.write(Buffer.from([byte]))
+ const client=await opened;assert.equal(client.metadata.root,'/home/é/runtime')
+ assert.equal((await client.request('code:readFile',{})).text,'é中文🙂');client.close()
+})

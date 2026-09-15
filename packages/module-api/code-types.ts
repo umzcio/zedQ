@@ -97,6 +97,7 @@ export interface CodeSnapshot {
 }
 export interface CodeTerminalChunk {
   sessionId: string
+  attachmentId?: string
   data: string
   reset?: boolean
 }
@@ -194,13 +195,13 @@ export interface CodeOperations {
   }
   interruptSession: { input: { id: string }; output: { ok: true } }
   attachTerminal: {
-    input: { id: string; cols: number; rows: number }
-    output: { ok: true }
+    input: { id: string; cols: number; rows: number; attachmentId?: string }
+    output: { ok: true; attachmentId: string }
   }
-  detachTerminal: { input: { id: string }; output: { ok: true } }
-  writeTerminal: { input: { id: string; data: string }; output: { ok: true } }
+  detachTerminal: { input: { id: string; attachmentId?: string }; output: { ok: true } }
+  writeTerminal: { input: { id: string; data: string; attachmentId?: string }; output: { ok: true } }
   resizeTerminal: {
-    input: { id: string; cols: number; rows: number }
+    input: { id: string; cols: number; rows: number; attachmentId?: string }
     output: { ok: true }
   }
   revealProject: { input: { id: string }; output: { ok: true } }

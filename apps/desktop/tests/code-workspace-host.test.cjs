@@ -20,6 +20,12 @@ test('external tmux requires idle exact identity; detach never stops it; no nati
  assert.equal(s.nativeIdVerified,false);assert.equal(s.nativeId,'');assert.equal(s.ownership,'external')
  await host.dispatch(owner,'attachTerminal',{id:s.id,cols:80,rows:24})
  await host.dispatch(owner,'writeTerminal',{id:s.id,data:'hello'});assert.deepEqual(writes,[['$2','hello']])
+ await host.dispatch(owner,'detachTerminal',{id:s.id})
+ await assert.rejects(host.dispatch({},'claimSession',{id:s.id}),{code:'LEASE_HELD'})
+ info.attached=true
+ await assert.rejects(host.dispatch(owner,'attachTerminal',{id:s.id,cols:80,rows:24}),{code:'EXTERNAL_TERMINAL_IN_USE'})
+ info.attached=false
+ await host.dispatch(owner,'attachTerminal',{id:s.id,cols:80,rows:24})
  await assert.rejects(host.dispatch(owner,'switchSession',{id:s.id,expectedRevision:0,mode:'chat'}),{code:'EXTERNAL_SESSION_OWNERSHIP'})
  await host.dispatch(owner,'releaseSession',{id:s.id});assert.equal(kills(),0)
  await host.dispatch(owner,'claimSession',{id:s.id});info={...info,identity:'999:789'}
@@ -39,4 +45,21 @@ test('desktop external Stop only detaches and releases lease; remote hosts work 
  let killed=0;service.terminals.set('external',{kill(){killed++}})
  assert.equal(await service.invoke('stopSession',{id:'external',expectedRevision:0}),external)
  assert.equal(killed,1);assert.deepEqual(calls,[['releaseSession',{id:'external'}]])
+})
+test('terminal attachment generations cancel late attach and stale detach without releasing lease',async t=>{
+ const {CodeService}=require('../electron/code/code-service.cjs'),{randomUUID}=require('node:crypto')
+ const root=fs.mkdtempSync('/tmp/zq-gen-'),spawned=[],pending=[]
+ const service=new CodeService({directory:root,tmuxPath:'/opt/homebrew/bin/tmux',pty:{spawn(){const p={kill(){p.killed=true},onData(){},onExit(){},resize(){}};spawned.push(p);return p}}})
+ t.after(()=>{service.close();fs.rmSync(root,{recursive:true,force:true})});clearInterval(service.timer)
+ service.snapshot=async()=>({sessions:[{id:'s',hostId:'local'}]})
+ service.request=async(method)=>{if(method==='detachTerminal')return {ok:true};assert.equal(method,'attachTerminal');await new Promise(resolve=>pending.push(resolve));return {ok:true}}
+ const oldToken=randomUUID(),newToken=randomUUID()
+ const oldAttach=service.invoke('attachTerminal',{id:'s',cols:80,rows:24,attachmentId:oldToken})
+ const oldRejected=assert.rejects(oldAttach,{code:'ATTACHMENT_SUPERSEDED'})
+ const newer=service.invoke('attachTerminal',{id:'s',cols:80,rows:24,attachmentId:newToken})
+ pending[1]();assert.equal((await newer).attachmentId,newToken)
+ pending[0]();await oldRejected;assert.equal(spawned.length,1)
+ await service.invoke('detachTerminal',{id:'s',attachmentId:oldToken});assert.ok(!spawned[0].killed)
+ await assert.rejects(service.invoke('writeTerminal',{id:'s',data:'stale',attachmentId:oldToken}),{code:'ATTACHMENT_SUPERSEDED'})
+ await service.invoke('detachTerminal',{id:'s',attachmentId:newToken});assert.equal(spawned[0].killed,true)
 })
