@@ -1,6 +1,6 @@
 # Code Handoff Foundation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Execute inline; delegation is not required.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking. Execute inline; delegation is not required.
 
 **Goal:** Build and test the native foundation for switching Claude profiles or interfaces while retaining one conversation and one controller.
 
@@ -9,6 +9,8 @@
 **Tech Stack:** Existing Node CommonJS native-service conventions, `node:test`, `node:child_process`, host `/bin/zsh`; no new dependencies.
 
 **Spec:** `plans/code/first-release-design.md`. This plan implements milestone 1 only. Milestones 2–5 retain their separate release gates.
+
+**Execution notes (2026-09-15):** Implemented in an isolated worktree. Source-exit uncertainty and a rejected startup without a cleanup handle now remain `switching` with `PROCESS_OWNERSHIP_UNKNOWN`, rather than permitting a retry before reconciliation. Failed persistence also blocks in-process retries until a successful recovery write or future host reconciliation. Process integration tests first failed with the missing fake-agent fixture and passed once the synthetic agent was implemented. No real account inference was run. See `plans/code/handoff-validation.md` for results.
 
 ## Global Constraints
 
@@ -66,7 +68,7 @@ The initial foundation accepts already known native IDs. New-session creation an
 - Produces `buildClaudeResume({profile, session, mode}): Launch`.
 - Throws an Error with `code` equal to `INVALID_PROFILE`, `INVALID_SESSION`, `HOST_MISMATCH`, or `MODE_UNSUPPORTED`; errors contain no launcher contents or environment values.
 
-- [ ] **Write failing launch tests**, including this exact representative case. Add cases rejecting nonabsolute launcher/cwd, mismatched hosts, non-UUID native ID, unknown modes and function names with shell operators.
+- [x] **Write failing launch tests**, including this exact representative case. Add cases rejecting nonabsolute launcher/cwd, mismatched hosts, non-UUID native ID, unknown modes and function names with shell operators.
 
 ```js
 const test = require('node:test');
@@ -90,8 +92,8 @@ test('resumes exact identity through the target launcher', () => {
 });
 ```
 
-- [ ] **Run** `node --test apps/desktop/tests/code-launch.test.cjs`; expect missing-module failure before implementation.
-- [ ] **Implement** metadata validation and fixed program construction. Accept function names matching `/^[A-Za-z_][A-Za-z0-9_-]*$/`; reject NUL in all strings. Require nonempty IDs, absolute cwd/launcher path and a canonical UUID native ID. Require mode to be `chat` or `terminal` and included in `profile.modes`. This is a local-host launch description; it does not serialize an SSH command.
+- [x] **Run** `node --test apps/desktop/tests/code-launch.test.cjs`; expect missing-module failure before implementation.
+- [x] **Implement** metadata validation and fixed program construction. Accept function names matching `/^[A-Za-z_][A-Za-z0-9_-]*$/`; reject NUL in all strings. Require nonempty IDs, absolute cwd/launcher path and a canonical UUID native ID. Require mode to be `chat` or `terminal` and included in `profile.modes`. This is a local-host launch description; it does not serialize an SSH command.
 
 ```js
 // After validation; no eval and no interpolation into PROGRAM.
@@ -106,8 +108,8 @@ return {file:'/bin/zsh',
 
 No environment object is returned or persisted. The process adapter supplies its host environment per child. The selected launcher file owns its existing account/provider configuration; source it explicitly rather than sourcing every interactive startup script. A launcher that depends on interactive state fails compatibility checks; do not rewrite it automatically. Preserve native permission defaults; do not append bypass flags. Chat flags are only a launch shape, not proof of a complete interactive protocol implementation.
 
-- [ ] **Run the launch tests** and require all cases pass. Add a chat assertion for the exact stream flags and unchanged native ID.
-- [ ] **Commit** the two files: `feat(code): preserve profile launchers and explicit resume identity`.
+- [x] **Run the launch tests** and require all cases pass. Add a chat assertion for the exact stream flags and unchanged native ID.
+- [x] **Commit** the two files: `feat(code): preserve profile launchers and explicit resume identity`.
 
 ### Task 2: Coordinate exclusive, recoverable handoffs
 
@@ -132,7 +134,7 @@ interface Ports {
 
 The coordinator's in-memory lock is sufficient only inside one host process. The persistent-host milestone must provide exclusive host ownership and crash reconciliation before exposing it to clients.
 
-- [ ] **Write failing tests** using this basic harness. Add deferred promises to hold preflight/stop/readiness for race tests; never rely on sleep ordering.
+- [x] **Write failing tests** using this basic harness. Add deferred promises to hold preflight/stop/readiness for race tests; never rely on sleep ordering.
 
 ```js
 const test = require('node:test');
@@ -167,8 +169,8 @@ test('changes profile only after source exit and native identity acknowledgement
 });
 ```
 
-- [ ] **Run** `node --test apps/desktop/tests/code-handoff.test.cjs`; expect missing-module failure.
-- [ ] **Implement the coordinator** with a per-session Set lock acquired synchronously before the first await and removed in `finally`. Validate expected revision, target host and mode, and require an existing native ID. Reject `switching` records on entry with `RECONCILIATION_REQUIRED`. Preflight precedes any save or stop. Persist `switching` at revision +1; persist final success or recoverable failure at revision +2. Preserve all immutable fields from the loaded record.
+- [x] **Run** `node --test apps/desktop/tests/code-handoff.test.cjs`; expect missing-module failure.
+- [x] **Implement the coordinator** with a per-session Set lock acquired synchronously before the first await and removed in `finally`. Validate expected revision, target host and mode, and require an existing native ID. Reject `switching` records on entry with `RECONCILIATION_REQUIRED`. Preflight precedes any save or stop. Persist `switching` at revision +1; persist final success or recoverable failure at revision +2. Preserve all immutable fields from the loaded record.
 
 ```js
 const switching = {...session, state:'switching', revision:session.revision + 1};
@@ -187,9 +189,9 @@ return next;
 
 Wrap the stop/start/ready/final-save block in error handling: stop any created target before returning a recoverable state, retain the old profile/mode, and record only a bounded public failure code. If target cleanup cannot confirm exit, preserve state `switching` with `PROCESS_OWNERSHIP_UNKNOWN`; input remains gated. If saving recovery fails, reject `PERSISTENCE_FAILED` and require reconciliation. Do not claim rollback restored a process. A `recoverable` record can retry using its current revision; `stopSource` must idempotently confirm the previous source is absent. Preflight failure must leave revision/state/source unchanged. A failed initial switching save must not stop the source.
 
-- [ ] **Add assertions for every failure contract**: preflight fails without stop; revision mismatch and simultaneous switch rejected; stop failure never starts target; readiness failure cleans target; identity mismatch cleans target; cleanup failure remains gated; final save failure cleans target; initial save failure leaves source untouched; retry preserves native ID; two different session IDs can transition independently. Assert neither inputs nor earlier tool actions are dispatched by this coordinator.
-- [ ] **Run** `node --test apps/desktop/tests/code-launch.test.cjs apps/desktop/tests/code-handoff.test.cjs`; require all pass.
-- [ ] **Commit** the coordinator/tests: `feat(code): coordinate exclusive recoverable profile handoffs`.
+- [x] **Add assertions for every failure contract**: preflight fails without stop; revision mismatch and simultaneous switch rejected; stop failure never starts target; readiness failure cleans target; identity mismatch cleans target; cleanup failure remains gated; final save failure cleans target; initial save failure leaves source untouched; retry preserves native ID; two different session IDs can transition independently. Assert neither inputs nor earlier tool actions are dispatched by this coordinator.
+- [x] **Run** `node --test apps/desktop/tests/code-launch.test.cjs apps/desktop/tests/code-handoff.test.cjs`; require all pass.
+- [x] **Commit** the coordinator/tests: `feat(code): coordinate exclusive recoverable profile handoffs`.
 
 ### Task 3: Prove process ordering and launcher isolation
 
@@ -197,7 +199,7 @@ Wrap the stop/start/ready/final-save block in error handling: stop any created t
 
 **Interfaces:** Consumes `buildClaudeResume` and `createHandoffCoordinator` exactly as above. Test-only adapters implement `Ports`. No production service or IPC is added.
 
-- [ ] **Create the fake agent**. It receives normal Claude argv but records only synthetic fixtures. The environment paths are temporary test paths. Its exclusive lock demonstrates whether the source really exited before a target started.
+- [x] **Create the fake agent**. It receives normal Claude argv but records only synthetic fixtures. The environment paths are temporary test paths. Its exclusive lock demonstrates whether the source really exited before a target started.
 
 ```js
 const fs = require('node:fs');
@@ -213,7 +215,7 @@ process.on('SIGTERM', () => {
 });
 ```
 
-- [ ] **Write failing process tests** creating an `fs.mkdtemp` workspace and a launcher file with shell-sensitive characters in its filename. Define two synthetic functions in that file. Use the current Node executable and fixture path as positional arguments with proper shell quoting when generating the fixture, not interpolated production shell commands. Functions forward `"$@"` and set distinct synthetic `ZQ_TEST_PROFILE` values. Launch with `spawn(launch.file, launch.args, {cwd:launch.cwd, env:testEnv, detached:true})`; clean process groups in test teardown with bounded waits.
+- [x] **Write failing process tests** creating an `fs.mkdtemp` workspace and a launcher file with shell-sensitive characters in its filename. Define two synthetic functions in that file. Use the current Node executable and fixture path as positional arguments with proper shell quoting when generating the fixture, not interpolated production shell commands. Functions forward `"$@"` and set distinct synthetic `ZQ_TEST_PROFILE` values. Launch with `spawn(launch.file, launch.args, {cwd:launch.cwd, env:testEnv, detached:true})`; clean process groups in test teardown with bounded waits.
 
 Assertions must include:
 
@@ -229,9 +231,9 @@ assert.equal(process.env.ZQ_TEST_PROFILE, undefined);
 
 `before` and `after` are parsed complete stdout JSON lines from the fake agent. Resolve `ready(handle)` only after parsing a full line; bound line size and readiness to 5 seconds in this test adapter. `stopSource`/`stopTarget` signal the process group and await the child's exit event, with forced cleanup on timeout. Reuse the exclusive lock path for source/target so overlap is an observable failed start. Assert spaces, quotes, dollar signs, and newlines survive argv without execution. Run two isolated sessions concurrently with different lock paths and ensure no environment cross-talk.
 
-- [ ] **Run** `node --test apps/desktop/tests/code-handoff-process.test.cjs`; before wiring the test adapter, expect failure to obtain the target acknowledgement. Fix test adapter lifecycle handling, not production semantics, when the fake fails to exit.
-- [ ] **Complete integration scenarios** for target startup failure and mismatched identity. Assert cleanup removes the test lock, no child remains, old session identity/profile is retained, and a subsequent retry can succeed. Keep synthetic configuration/history marker files unchanged. These markers test non-mutation, not real Claude memory equivalence.
-- [ ] **Run focused verification**:
+- [x] **Run** `node --test apps/desktop/tests/code-handoff-process.test.cjs`; before wiring the test adapter, expect failure to obtain the target acknowledgement. Fix test adapter lifecycle handling, not production semantics, when the fake fails to exit.
+- [x] **Complete integration scenarios** for target startup failure and mismatched identity. Assert cleanup removes the test lock, no child remains, old session identity/profile is retained, and a subsequent retry can succeed. Keep synthetic configuration/history marker files unchanged. These markers test non-mutation, not real Claude memory equivalence.
+- [x] **Run focused verification**:
 
 ```sh
 node --test apps/desktop/tests/code-launch.test.cjs apps/desktop/tests/code-handoff.test.cjs apps/desktop/tests/code-handoff-process.test.cjs
@@ -241,8 +243,8 @@ npm run typecheck
 
 Require zero failed focused tests and no diff whitespace errors. Typecheck failures must be investigated and reported with baseline evidence; do not silently label them unrelated. No package install or app replacement is required for this internal milestone.
 
-- [ ] **Write `plans/code/handoff-validation.md`** with command outcomes, fake-agent cases, detected runtime versions, unchanged normal-workspace statement backed by the test isolation paths, and explicit unverified gates: real Claude authentication/provider preservation, Chat permissions/protocol, native memory/config continuity, persistent host restart, tmux, SSH. Link this evidence and the design from `modules/code/README.md`, retaining “Not implemented or shipped” for its UI.
-- [ ] **Commit** the fixture, integration tests, evidence, and README: `test(code): verify process handoff and profile isolation`.
+- [x] **Write `plans/code/handoff-validation.md`** with command outcomes, fake-agent cases, detected runtime versions, unchanged normal-workspace statement backed by the test isolation paths, and explicit unverified gates: real Claude authentication/provider preservation, Chat permissions/protocol, native memory/config continuity, persistent host restart, tmux, SSH. Link this evidence and the design from `modules/code/README.md`, retaining “Not implemented or shipped” for its UI.
+- [x] **Commit** the fixture, integration tests, evidence, and README: `test(code): verify process handoff and profile isolation`.
 
 ## Review before moving to the persistent host
 
