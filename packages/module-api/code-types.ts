@@ -13,7 +13,9 @@ export type CodeState =
 export interface CodeHost {
   id: string
   name: string
-  kind: 'local'
+  kind: 'local' | 'ssh'
+  sshAlias?: string
+  error?: string | null
   available: boolean
 }
 export interface CodeProject {
@@ -31,6 +33,7 @@ export interface CodeProfile {
   name: string
   launcherFile: string
   functionName: string
+  adapter?: 'claude' | 'terminal'
   modes: CodeMode[]
   sharedHistoryConfirmed: boolean
   createdAt: number
@@ -43,6 +46,8 @@ export interface CodeSession {
   profileId: string
   nativeId: string
   nativeIdVerified: boolean
+  ownership?: 'owned' | 'external'
+  tmuxTarget?: string
   mode: CodeMode
   state: CodeState
   revision: number
@@ -101,8 +106,31 @@ export type CodeProfileInput = Pick<
   CodeProfile,
   'name' | 'launcherFile' | 'functionName'
 > &
-  Partial<Pick<CodeProfile, 'hostId' | 'modes' | 'sharedHistoryConfirmed'>>
+  Partial<Pick<CodeProfile, 'hostId' | 'modes' | 'sharedHistoryConfirmed' | 'adapter'>>
+export interface CodeFileEntry { path: string; name: string; kind: 'file' | 'directory' | 'symlink'; size: number }
+export interface CodeFile { path: string; text: string; fingerprint: string }
+export interface CodeChange { path: string; previousPath?: string; index: string; worktree: string; untracked: boolean }
+export interface CodePreview { id: string; projectId: string; sourceUrl: string; url: string; forwarded: boolean; state: 'ready' | 'stopped'; error?: string }
+export interface CodeExternalTerminal { target: string; name: string; attached: boolean; ownership: 'external' }
+export type CodeHostInput = { name: string; sshAlias: string }
 export interface CodeOperations {
+  createHost: { input: CodeHostInput; output: CodeHost }
+  updateHost: { input: { id: string; patch: Partial<CodeHostInput> }; output: CodeHost }
+  deleteHost: { input: { id: string }; output: { ok: true } }
+  discoverHosts: { input: undefined; output: { aliases: string[] } }
+  connectHost: { input: { id: string }; output: CodeHost }
+  disconnectHost: { input: { id: string }; output: { ok: true } }
+  listFiles: { input: { projectId: string; path?: string }; output: { entries: CodeFileEntry[]; truncated: boolean } }
+  readFile: { input: { projectId: string; path: string }; output: CodeFile }
+  writeFile: { input: { projectId: string; path: string; text: string; fingerprint: string }; output: CodeFile }
+  gitStatus: { input: { projectId: string }; output: { changes: CodeChange[]; truncated: boolean } }
+  gitDiff: { input: { projectId: string; path: string; staged?: boolean }; output: { diff: string; truncated: boolean } }
+  revealFile: { input: { projectId: string; path: string }; output: { ok: true } }
+  discoverTerminals: { input: { hostId: string }; output: CodeExternalTerminal[] }
+  attachExternalTerminal: { input: { projectId: string; target: string; title?: string }; output: CodeSession }
+  openPreview: { input: { projectId: string; url: string }; output: CodePreview }
+  stopPreview: { input: { id: string }; output: { ok: true } }
+  listPreviews: { input: undefined; output: CodePreview[] }
   snapshot: { input: undefined; output: CodeSnapshot }
   pickDirectory: { input: undefined; output: string | null }
   createProject: { input: CodeProjectInput; output: CodeProject }

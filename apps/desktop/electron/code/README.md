@@ -1,0 +1,25 @@
+# Native Code host
+
+CodeService is the desktop-facing adapter; CodeHost owns the durable catalog and exclusive controllers in a private tmux service. Closing the desktop detaches its clients. An explicit Stop terminates owned sessions only. `stopSession` on an external terminal detaches the app client and releases its lease.
+
+## Workspaces
+
+Files and git operations run on the project's execution host. Paths are project-relative, symlink components are rejected, UTF-8 edits are limited to 24,000 bytes, and saves require the last SHA-256 fingerprint. Existing files are atomically replaced with the original permission bits. Hard-linked files, binary files and invalid UTF-8 are rejected. Directory listings and diff output are bounded. Git receives literal pathspecs and never runs external diff/textconv helpers. Save does not create files; it edits existing files only.
+
+## SSH
+
+Host records contain a display name and OpenSSH alias only. Alias discovery reads the user/system SSH configuration and bounded Include files. No connection occurs until Connect. OpenSSH uses existing host keys, keys, agents and jump configuration; BatchMode prevents unexpected password prompts. Resolve unknown host keys or authentication interactively using the system SSH client, then retry Connect. The execution host must have Node, tmux, and `/bin/zsh` available to noninteractive SSH commands.
+
+Connect copies the shipped JavaScript service bundle to an immutable content-addressed directory under `~/.local/share/zq/code/bundles`, with runtime state under `~/.local/share/zq/code/runtime`. These directories and files are private to the user; unsafe existing paths are rejected. SSH transports authenticate to the host's private IPC internally without returning its token. Reconnect attaches to the same running host and controllers. Disconnect/delete host closes only this app's connections and preview forwards; it leaves remote sessions, launchers, configuration and catalog intact. A host alias is immutable after creation; add a separate host record to change execution identity.
+
+Host-local launcher files/functions are explicitly configured on each host. The `terminal` profile adapter runs exactly that launcher with no injected Claude arguments. Generic or external terminals have no verified native conversation and cannot switch to Chat, switch profiles, or resume a stopped process. Existing external tmux sessions are discovered on the host's default tmux server. Their exact tmux session ID and server/creation identity are retained; an already attached session is not seized. Native identity adoption from an external Claude terminal is deliberately unavailable without independent validation.
+
+## Preview
+
+Only credential-free HTTP(S) loopback URLs are accepted. Remote forwarding binds `127.0.0.1` through an app-owned SSH process with multiplex sharing disabled, automatic port allocation, and explicit forwarding readiness. Stop, disconnect, or app close terminates only this app's forwarding process. Reopen creates a new forward. HTTPS applications may require a certificate trusted for `127.0.0.1`; forwarding preserves HTTPS rather than weakening TLS. Embedding restrictions require the UI's Open in browser action. Renderer sandbox/CSP is enforced by the shell and Code UI.
+
+## Controller recovery
+
+Structured runner launch intent and native process-group ownership are durable. A vanished runner with a surviving or uncertain group remains blocked across host-service restarts. Recovery never signals a PID recovered from disk, since it might have been reused. The full SessionStart receipt (native ID, cwd, source and nonce) is independent of protocol initialization and mandatory for input. Failed receipt validation stays rejected; failed creation attempts stop their target. Readiness allows 45 seconds for shared MCP/tool initialization, fails promptly on actual process exit, and retains sanitized startup errors after the process stops. IPC request deadlines allow the full readiness interval.
+
+Tests use disposable workspaces, fake CLI fixtures, synthetic SSH transports, and isolated tmux servers. The synthetic SSH transport executes the actual bootstrap, service bridge, file edits and persistent reconnect flow. Real claude-cio initialization (without a prompt) was also verified through both Node and Electron host runtimes in disposable checkouts. No live user SSH host, live multi-account Claude handoff, or network SSH forwarding was exercised by this task. These remain live integration boundaries; launcher-specific settings/hook composition also still needs real-account validation.

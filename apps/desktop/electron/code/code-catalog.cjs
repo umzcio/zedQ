@@ -117,7 +117,7 @@ class CodeCatalog {
           ).test(source)
         )
           this.value.profiles.push(
-            this.profile({ name, launcherFile: seedFile, functionName: name })
+            this.profile({ name, launcherFile: seedFile, functionName: name, sharedHistoryConfirmed: true })
           )
       this.save()
     }
@@ -164,6 +164,7 @@ class CodeCatalog {
       'functionName',
       'hostId',
       'modes',
+      'adapter',
       'sharedHistoryConfirmed'
     ])
     if (
@@ -173,6 +174,7 @@ class CodeCatalog {
       !text(input.functionName, 100) ||
       !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(input.functionName) ||
       (input.hostId && input.hostId !== 'local') ||
+      (input.adapter !== undefined && !['claude', 'terminal'].includes(input.adapter)) ||
       (input.modes &&
         (!Array.isArray(input.modes) ||
           !input.modes.length ||
@@ -187,7 +189,8 @@ class CodeCatalog {
       name: input.name,
       launcherFile: input.launcherFile,
       functionName: input.functionName,
-      modes: input.modes || ['chat', 'terminal'],
+      adapter: input.adapter || 'claude',
+      modes: input.adapter === 'terminal' ? ['terminal'] : input.modes || ['chat', 'terminal'],
       sharedHistoryConfirmed: input.sharedHistoryConfirmed || false,
       createdAt: Date.now()
     }
@@ -238,6 +241,7 @@ class CodeCatalog {
       'functionName',
       'hostId',
       'modes',
+      'adapter',
       'sharedHistoryConfirmed'
     ])
     if (
@@ -256,6 +260,7 @@ class CodeCatalog {
           'functionName',
           'hostId',
           'modes',
+          'adapter',
           'sharedHistoryConfirmed'
         ].map((k) => [k, row[k]])
       ),
@@ -274,6 +279,7 @@ class CodeCatalog {
           'functionName',
           'hostId',
           'modes',
+          'adapter',
           'sharedHistoryConfirmed'
         ].map((k) => [k, row[k]])
       ),

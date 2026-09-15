@@ -41,7 +41,7 @@ function open(paths) {
                 pending.delete(id)
                 reject(Object.assign(new Error('SERVICE_REQUEST_TIMEOUT'),{code:'SERVICE_REQUEST_TIMEOUT'}))
                 close() // outcome may be unknown; never replay writes automatically
-              },10000)
+              },60000)
               pending.set(id,{resolve,reject,timer})
               socket.write(data)
             })

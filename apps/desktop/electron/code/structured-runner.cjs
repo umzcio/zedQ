@@ -7,6 +7,7 @@ const { timingSafeEqual, randomUUID } = require('node:crypto')
 const { ClaudeProtocol } = require('./claude-protocol.cjs')
 const { atomic, privateRead } = require('./code-catalog.cjs')
 const { fail } = require('./service-storage.cjs')
+const { groupAbsent } = require('./process-ownership.cjs')
 const endpoint = (root, id) =>
   path.join(
     root,
@@ -92,7 +93,10 @@ async function run(root, id) {
     ended = false,
     error = null,
     stopping = false,
-    journalBlocked = false
+    journalBlocked = false,
+    receiptVerified = false
+  const ownershipFile = path.join(root, id + '.ownership.json')
+  atomic(ownershipFile, { state: 'launching', nonce: config.nonce })
   function event(e) {
     const safe = {
       ...e,
@@ -150,8 +154,10 @@ async function run(root, id) {
     detached: true,
     stdio: ['pipe', 'pipe', 'pipe']
   })
+  if (child.pid) atomic(ownershipFile, { state: 'running', pid: child.pid, nonce: config.nonce })
   child.stdout.setEncoding('utf8')
   child.stdout.on('data', (data) => {
+    if (error) return
     try {
       protocol.feed(data)
     } catch (e) {
@@ -171,18 +177,20 @@ async function run(root, id) {
   child.stdin.on('error', () => protocolError('AGENT_INPUT_CLOSED'))
   child.on('error', () => {
     ended = true
+    atomic(ownershipFile, { state: 'exited', nonce: config.nonce })
     protocolError('AGENT_START_FAILED')
   })
   child.on('exit', () => {
     ended = true
-    protocol.state = 'stopped'
+    if (groupAbsent(child.pid)) atomic(ownershipFile, { state: 'exited', nonce: config.nonce })
+    protocol.state = error ? 'error' : 'stopped'
     event({ kind: 'status', text: 'Agent stopped' })
     if (stopping) finishStop()
   })
   process.on('SIGHUP', stop)
   process.on('SIGTERM', stop)
   function signalChild() {
-    if (child?.pid)
+    if (child?.pid && !ended)
       try {
         process.kill(-child.pid, 'SIGTERM')
       } catch (e) {
@@ -198,13 +206,29 @@ async function run(root, id) {
     } catch (e) {
       if (e.code !== 'ESRCH') present = true
     }
-    if (!present) process.exit(0)
+    if (!present) { atomic(ownershipFile, { state: 'exited', nonce: config.nonce }); process.exit(0) }
     setTimeout(finishStop, 50)
   }
   function stop() {
     stopping = true
     signalChild()
     if (ended) finishStop()
+  }
+  function verifyReceipt(required) {
+    if (error) { if (required) fail(error); return }
+    if (!receiptVerified) {
+      try {
+        const r = privateRead(config.receipt)
+        if (r.nativeId !== config.nativeId || r.cwd !== config.launch.cwd || r.nonce !== config.nonce
+          || r.source !== (config.fresh ? 'startup' : 'resume')) fail('IDENTITY_MISMATCH')
+        receiptVerified = true
+        protocol.verified = true
+        if (protocol.state === 'starting') protocol.state = 'ready'
+      } catch (e) {
+        if (e.code !== 'ENOENT') protocolError('IDENTITY_MISMATCH')
+      }
+    }
+    if (required && (error || !receiptVerified || !protocol.initialized || ended)) fail(error || 'SESSION_NOT_READY')
   }
   const socketPath = endpoint(root, id)
   try {
@@ -233,26 +257,12 @@ async function run(root, id) {
           return socket.destroy()
         const input = m.input || {}
         let result
+        if (['message','permission','interrupt','activated'].includes(m.method)) verifyReceipt(true)
         if (m.method === 'status') {
-          if (!protocol.verified) {
-            try {
-              const r = privateRead(config.receipt)
-              if (
-                r.nativeId !== config.nativeId ||
-                r.cwd !== config.launch.cwd ||
-                r.nonce !== config.nonce ||
-                r.source !== (config.fresh ? 'startup' : 'resume')
-              )
-                fail('IDENTITY_MISMATCH')
-              protocol.verified = true
-              protocol.state = 'ready'
-            } catch (e) {
-              if (e.code !== 'ENOENT') throw e
-            }
-          }
+          verifyReceipt(false)
           result = {
-            nativeId: protocol.verified ? config.nativeId : null,
-            state: protocol.initialized ? protocol.state : 'starting',
+            nativeId: receiptVerified && !error ? config.nativeId : null,
+            state: error ? 'error' : receiptVerified && protocol.initialized ? protocol.state : 'starting',
             initialized: protocol.initialized,
             pid: child.pid,
             error,

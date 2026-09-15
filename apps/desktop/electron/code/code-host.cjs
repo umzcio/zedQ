@@ -12,6 +12,10 @@ const { buildClaudeResume } = require('./claude-launch.cjs')
 const { createHandoffCoordinator } = require('./handoff.cjs')
 const { requestRunner } = require('./structured-runner.cjs')
 const { fail } = require('./service-storage.cjs')
+const { workspace, workspaceMethods } = require('./workspace.cjs')
+const { externalTmux } = require('./external-terminal.cjs')
+const { buildTerminalLaunch } = require('./terminal-launch.cjs')
+const { nativeExitConfirmed } = require('./process-ownership.cjs')
 const delay = (ms) => new Promise((r) => setTimeout(r, ms))
 const quote = (v) => "'" + v.replace(/'/g, "'\\''") + "'"
 class CodeHost {
@@ -23,6 +27,8 @@ class CodeHost {
     this.leases = new Map()
     this.handles = new Map()
     this.eventCursors = new Map()
+    this.external = externalTmux(tmux.binary)
+    this.externalOwners = new Map()
     this.coordinator = createHandoffCoordinator({
       load: async (id) => {
         const s = this.session(id)
@@ -58,15 +64,28 @@ class CodeHost {
     return 'zqc-' + id
   }
   release(owner) {
+    for (const [id, v] of this.externalOwners) if (v === owner) this.externalOwners.delete(id)
     for (const [id, v] of this.leases) if (v === owner) this.leases.delete(id)
   }
   own(owner, id) {
     if (this.leases.get(id) !== owner) fail('LEASE_REQUIRED')
   }
   async status(s) {
+    if (s.ownership === 'external') {
+      const info = await this.external.inspect(s.tmuxTarget)
+      const state = info && info.identity === s.tmuxIdentity ? 'ready' : 'stopped'
+      if (s.state !== state) { s.state = state; this.catalog.save() }
+      return
+    }
     const live = await this.tmux.inspect(this.name(s.id))
     if (live && s.pid && live.pid !== s.pid) fail('SESSION_IDENTITY_CHANGED')
     if (!live) {
+      if (s.mode === 'chat' && !nativeExitConfirmed(this.paths.root, s.id)) {
+        if (s.state !== 'switching' || s.error !== 'PROCESS_OWNERSHIP_UNKNOWN') {
+          s.state = 'switching'; s.error = 'PROCESS_OWNERSHIP_UNKNOWN'; this.catalog.save()
+        }
+        return
+      }
       if (s.pid) {
         try {
           process.kill(s.pid, 0)
@@ -95,16 +114,17 @@ class CodeHost {
           this.paths.token,
           'status'
         )
+        const nextError = r.error || (r.nativeId && !r.ended ? null : s.error)
         const changed =
           s.state !== r.state ||
           s.nativeIdVerified !== !!r.nativeId ||
-          s.error !== r.error ||
+          s.error !== nextError ||
           this.eventCursors.get(s.id) !== r.seq
         if (changed) {
           this.eventCursors.set(s.id, r.seq)
           s.state = r.ended ? 'stopped' : r.state
           s.nativeIdVerified = !!r.nativeId
-          s.error = r.error
+          s.error = nextError
           this.catalog.save()
         }
       } catch {
@@ -117,6 +137,7 @@ class CodeHost {
     }
   }
   async preflight(s, { profile, mode }) {
+    if (s.ownership === 'external' || profile.adapter === 'terminal' || this.catalog.find('profiles', s.profileId).adapter === 'terminal') fail('RESUME_UNSUPPORTED')
     buildClaudeResume({ session: s, profile, mode })
     if (
       !fs.statSync(s.cwd).isDirectory() ||
@@ -132,6 +153,18 @@ class CodeHost {
     if (!s.nativeIdVerified) fail('IDENTITY_UNVERIFIED')
   }
   async start(s, { profile, mode }, fresh) {
+    if (!fresh && s.mode === 'chat' && !nativeExitConfirmed(this.paths.root, s.id)) fail('PROCESS_OWNERSHIP_UNKNOWN')
+    if (profile.adapter === 'terminal') {
+      if (!fresh) fail('RESUME_UNSUPPORTED')
+      const launch = buildTerminalLaunch({ session: s, profile, mode })
+      await this.tmux.launch(this.name(s.id), launch, 100, 30)
+      const live = await this.tmux.inspect(this.name(s.id))
+      if (!live) fail('TARGET_NOT_READY')
+      s.pid = live.pid
+      atomic(path.join(this.paths.root, s.id + '.controller.json'), { mode, pid: s.pid, adapter: 'terminal' })
+      this.catalog.save()
+      return { id: s.id, mode, generic: true, profileId: profile.id }
+    }
     const launch = buildClaudeResume({ session: s, profile, mode })
     try {
       const old = privateRead(
@@ -191,6 +224,7 @@ class CodeHost {
         cwd: s.cwd
       }
     }
+    if (mode === 'chat') atomic(path.join(this.paths.root, s.id + '.ownership.json'), { state: 'launching', nonce })
     await this.tmux.launch(this.name(s.id), actual, 100, 30, mode === 'chat')
     const live = await this.tmux.inspect(this.name(s.id))
     s.pid = live?.pid || null
@@ -216,8 +250,22 @@ class CodeHost {
     return handle
   }
   async ready(h) {
-    const deadline = Date.now() + 5000
+    if (h.generic) {
+      if (!(await this.tmux.inspect(this.name(h.id)))) fail('TARGET_NOT_READY')
+      await this.activated(h)
+      return { nativeId: null }
+    }
+    const deadline = Date.now() + 45000
     while (Date.now() < deadline) {
+      if (!(await this.tmux.inspect(this.name(h.id)))) fail('TARGET_NOT_READY')
+      if (h.mode === 'chat') {
+        try {
+          const pending = await requestRunner(this.paths.root, h.id, this.paths.token, 'status')
+          if (pending.error || pending.ended) fail(pending.error || 'TARGET_NOT_READY')
+        } catch (e) {
+          if (e.code !== 'RUNNER_UNAVAILABLE') throw e
+        }
+      }
       let receipt
       try {
         receipt = privateRead(h.receipt)
@@ -287,10 +335,11 @@ class CodeHost {
     atomic(file, journal)
   }
   async stop(s) {
+    if (s.ownership === 'external') fail('EXTERNAL_SESSION_OWNERSHIP')
     const live = await this.tmux.inspect(this.name(s.id))
     if (!live) {
       await this.status(s)
-      if (s.pid) fail('STOP_UNCONFIRMED')
+      if (s.pid || s.error === 'PROCESS_OWNERSHIP_UNKNOWN') fail('STOP_UNCONFIRMED')
       return
     }
     let mode = s.mode
@@ -336,6 +385,23 @@ class CodeHost {
     if (this.catalog.blocked) fail('STORAGE_UNAVAILABLE')
     if (!input || typeof input !== 'object' || Array.isArray(input))
       fail('INVALID_REQUEST')
+    if (workspaceMethods.has(method)) return workspace(this.catalog.find('projects', input.projectId).cwd, method, input)
+    if (method === 'discoverTerminals') return this.external.discover()
+    if (method === 'attachExternalTerminal') {
+      if (this.catalog.value.sessions.length >= 32) fail('LIMIT_REACHED')
+      keys(input, ['projectId','target','title'])
+      if (typeof input.target !== 'string' || !/^\$\d+$/.test(input.target) || (input.title !== undefined && !text(input.title,200))) fail('INVALID_REQUEST')
+      const project = this.catalog.find('projects', input.projectId)
+      const info = await this.external.inspect(input.target)
+      if (!info) fail('NOT_FOUND')
+      if (info.attached) fail('EXTERNAL_TERMINAL_IN_USE')
+      if (this.catalog.value.sessions.some(s => s.ownership === 'external' && s.tmuxTarget === input.target && s.tmuxIdentity === info.identity)) fail('ALREADY_ATTACHED')
+      const s = { id: randomUUID(), projectId: project.id, hostId: project.hostId, cwd: project.cwd, profileId: '',
+        nativeId: '', nativeIdVerified: false, mode: 'terminal', state: 'ready', revision: 0, title: input.title || info.name,
+        createdAt: Date.now(), updatedAt: Date.now(), archivedAt: null, pid: null, error: null, ownership: 'external', tmuxTarget: input.target, tmuxIdentity: info.identity }
+      this.catalog.value.sessions.push(s); this.catalog.save(); this.leases.set(s.id, owner)
+      return s
+    }
     if (method === 'snapshot') {
       for (const s of this.catalog.value.sessions) await this.status(s)
       return {
@@ -381,7 +447,8 @@ class CodeHost {
         hostId: project.hostId,
         cwd: project.cwd,
         profileId: profile.id,
-        nativeId: randomUUID(),
+        nativeId: profile.adapter === 'terminal' ? '' : randomUUID(),
+        ownership: 'owned',
         nativeIdVerified: false,
         mode: input.mode,
         state: 'starting',
@@ -399,10 +466,12 @@ class CodeHost {
       try {
         const h = await this.start(s, { profile, mode: s.mode }, true)
         await this.ready(h)
-        s.nativeIdVerified = true
+        s.nativeIdVerified = profile.adapter !== 'terminal'
         s.state = 'ready'
         this.catalog.save()
       } catch (e) {
+        try { await this.stop(s) } catch {}
+        s.nativeIdVerified = false
         s.error = e.code || 'START_FAILED'
         s.state = 'error'
         this.catalog.save()
@@ -418,6 +487,7 @@ class CodeHost {
     }
     if (method === 'releaseSession') {
       if (this.leases.get(s.id) === owner) this.leases.delete(s.id)
+      if (this.externalOwners.get(s.id) === owner) this.externalOwners.delete(s.id)
       return { ok: true }
     }
     if (method === 'events') {
@@ -464,6 +534,8 @@ class CodeHost {
     }
     this.own(owner, s.id)
     if (['stopSession', 'resumeSession', 'switchSession'].includes(method)) {
+      if (s.ownership === 'external') fail('EXTERNAL_SESSION_OWNERSHIP')
+      if (method !== 'stopSession' && this.catalog.find('profiles', s.profileId).adapter === 'terminal') fail('RESUME_UNSUPPORTED')
       if (input.expectedRevision !== s.revision) fail('STALE_REVISION')
       await this.status(s)
       if (method === 'switchSession' && ['busy', 'approval'].includes(s.state))
@@ -520,8 +592,15 @@ class CodeHost {
           Buffer.byteLength(input.data) > 8192)
       )
         fail('INVALID_REQUEST')
-      if (method === 'writeTerminal')
-        await this.tmux.write(this.name(s.id), input.data)
+      if (s.ownership === 'external') {
+        const info = await this.external.inspect(s.tmuxTarget)
+        if (!info || info.identity !== s.tmuxIdentity) fail('SESSION_IDENTITY_CHANGED')
+        if (method === 'attachTerminal') {
+          if (info.attached && this.externalOwners.get(s.id) !== owner) fail('EXTERNAL_TERMINAL_IN_USE')
+          this.externalOwners.set(s.id, owner)
+        }
+        if (method === 'writeTerminal') await this.external.write(s.tmuxTarget, input.data)
+      } else if (method === 'writeTerminal') await this.tmux.write(this.name(s.id), input.data)
       return { ok: true }
     }
     if (method === 'detachTerminal') return { ok: true }

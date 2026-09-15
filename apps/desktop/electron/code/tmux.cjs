@@ -25,7 +25,7 @@ function createTmux({binary,socket,env = process.env}) {
       }))
   }
   const pane = name => `=${name}:0.0`
-  return {run,
+  return {run,binary,
     launch:(name,launch,cols = 100,rows = 30,runAsNode = false) => run(['new-session','-d','-s',name,...(runAsNode ? ['-e','ELECTRON_RUN_AS_NODE=1'] : []),'-x',String(cols),
       '-y',String(rows),'-c',launch.cwd,shellCommand(launch)]),
     async inspect(name) {

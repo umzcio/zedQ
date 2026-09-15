@@ -36,7 +36,7 @@ function setup(t) {
         stdio: 'ignore'
       })
     } catch {}
-    fs.rmSync(root, { recursive: true, force: true })
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
   })
   return { root, launch, service }
 }
@@ -363,4 +363,69 @@ test('host service crash reconnects to the same structured runner without replay
     return j.events.some((e) => e.text === 'reply:after crash') && j
   })
   assert.equal(journal.events.filter((e) => e.kind === 'user').length, 2)
+})
+test('runner SIGKILL cannot mark a surviving detached controller stopped or resume it',async t=>{
+ const h=setup(t),a=h.service()
+ const project=await a.invoke('createProject',{name:'Work',cwd:h.root})
+ const profile=await a.invoke('createProfile',{name:'A',launcherFile:h.launch,functionName:'claude-a'})
+ const s=await a.invoke('createSession',{projectId:project.id,profileId:profile.id,mode:'chat'})
+ const ownership=JSON.parse(fs.readFileSync(path.join(h.root,s.id+'.ownership.json')))
+ t.after(()=>{try{process.kill(-ownership.pid,'SIGKILL')}catch{}})
+ process.kill(s.pid,'SIGKILL')
+ await delay(150)
+ const current=(await a.invoke('snapshot')).sessions[0]
+ assert.equal(current.state,'switching');assert.equal(current.error,'PROCESS_OWNERSHIP_UNKNOWN')
+ process.kill(ownership.pid,0)
+ await assert.rejects(a.invoke('resumeSession',{id:s.id,expectedRevision:current.revision}),{code:'RECONCILIATION_REQUIRED'})
+ a.close()
+ execFileSync(tmux,['-S',path.join(h.root,'tmux'),'kill-session','-t','=zq-service'])
+ const b=h.service(),after=(await b.invoke('snapshot')).sessions[0]
+ assert.equal(after.state,'switching');assert.equal(after.error,'PROCESS_OWNERSHIP_UNKNOWN')
+})
+test('wrong cwd identity stays rejected through polling and blocks all input',async t=>{
+ const h=setup(t),a=h.service(),wrong=path.join(h.root,'wrong');fs.mkdirSync(wrong)
+ fs.appendFileSync(h.launch,`claude-wrong() { cd '${wrong}'; exec '${process.execPath}' '${path.join(__dirname,'fixtures/code/structured-agent.cjs')}' "$@"; }\n`)
+ const p=await a.invoke('createProject',{name:'Work',cwd:h.root})
+ const profile=await a.invoke('createProfile',{name:'Wrong',launcherFile:h.launch,functionName:'claude-wrong'})
+ const s=await a.invoke('createSession',{projectId:p.id,profileId:profile.id,mode:'chat'})
+ assert.equal(s.nativeIdVerified,false);assert.equal(s.error,'IDENTITY_MISMATCH')
+ const current=(await a.invoke('snapshot')).sessions[0]
+ assert.notEqual(current.state,'ready');assert.equal(current.nativeIdVerified,false);assert.equal(current.error,s.error)
+ await assert.rejects(a.invoke('sendMessage',{id:s.id,text:'must never send'}))
+ const journal=await a.invoke('events',{id:s.id,after:0});assert.ok(!journal.events.some(e=>e.kind==='user'))
+})
+test('generic installed CLI is a persistent terminal with no injected Claude args or fake resume',async t=>{
+ const h=setup(t),a=h.service();fs.appendFileSync(h.launch,`generic-cli() { printf '%s' "$#" > '${h.root}/argc'; exec /bin/cat; }\n`)
+ const p=await a.invoke('createProject',{name:'Generic',cwd:h.root})
+ const profile=await a.invoke('createProfile',{name:'Local model',launcherFile:h.launch,functionName:'generic-cli',adapter:'terminal'})
+ assert.deepEqual(profile.modes,['terminal'])
+ const s=await a.invoke('createSession',{projectId:p.id,profileId:profile.id,mode:'terminal'})
+ assert.equal(s.state,'ready');assert.equal(s.nativeIdVerified,false);assert.equal(s.nativeId,'')
+ await until(()=>fs.existsSync(path.join(h.root,'argc')));assert.equal(fs.readFileSync(path.join(h.root,'argc'),'utf8'),'0')
+ a.close();const b=h.service();assert.equal((await b.invoke('snapshot')).sessions[0].pid,s.pid)
+ await b.invoke('claimSession',{id:s.id});const stopped=await b.invoke('stopSession',{id:s.id,expectedRevision:0})
+ assert.equal(stopped.state,'stopped');await assert.rejects(b.invoke('resumeSession',{id:s.id,expectedRevision:stopped.revision}),{code:'RESUME_UNSUPPORTED'})
+})
+
+test('missing receipt cannot be bypassed by ID-only protocol init',async t=>{
+ const h=setup(t),a=h.service(),fixture=path.join(h.root,'missing.cjs')
+ fs.writeFileSync(fixture,fs.readFileSync(path.join(__dirname,'fixtures/code/structured-agent.cjs'),'utf8').replace('execSync(hook, {','if (false) execSync(hook, {'))
+ fs.appendFileSync(h.launch,`claude-missing() { exec '${process.execPath}' '${fixture}' "$@"; }\n`)
+ const p=await a.invoke('createProject',{name:'Work',cwd:h.root})
+ const profile=await a.invoke('createProfile',{name:'Missing',launcherFile:h.launch,functionName:'claude-missing'})
+ const s=await a.invoke('createSession',{projectId:p.id,profileId:profile.id,mode:'chat'})
+ assert.equal(s.nativeIdVerified,false);assert.equal(s.error,'IDENTITY_UNVERIFIED')
+ const current=(await a.invoke('snapshot')).sessions[0]
+ assert.notEqual(current.state,'ready');assert.equal(current.nativeIdVerified,false);assert.equal(current.error,s.error)
+ await assert.rejects(a.invoke('sendMessage',{id:s.id,text:'must never send'}))
+})
+
+test('slow protocol initialization has time to become ready after a valid receipt',async t=>{
+ const h=setup(t),a=h.service(),fixture=path.join(h.root,'slow.cjs')
+ fs.writeFileSync(fixture,fs.readFileSync(path.join(__dirname,'fixtures/code/structured-agent.cjs'),'utf8').replace("const out = (m) => process.stdout.write(JSON.stringify(m) + '\\n')", "const out = (m) => { if (m.type === 'control_response') setTimeout(() => process.stdout.write(JSON.stringify(m) + '\\n'), 6000); else process.stdout.write(JSON.stringify(m) + '\\n') }") )
+ fs.appendFileSync(h.launch,`claude-slow() { exec '${process.execPath}' '${fixture}' "$@"; }\n`)
+ const p=await a.invoke('createProject',{name:'Work',cwd:h.root})
+ const profile=await a.invoke('createProfile',{name:'Slow',launcherFile:h.launch,functionName:'claude-slow'})
+ const started=Date.now(),s=await a.invoke('createSession',{projectId:p.id,profileId:profile.id,mode:'chat'})
+ assert.equal(s.state,'ready');assert.ok(Date.now()-started>=6000);assert.equal(s.nativeIdVerified,true)
 })
