@@ -46,7 +46,7 @@ function createHandoffCoordinator(ports) {
           || !['ready','switching','recoverable'].includes(session.state)) throw failure('INVALID_SESSION')
         if (session.state === 'switching') throw failure('RECONCILIATION_REQUIRED')
         if (session.revision !== expectedRevision) throw failure('STALE_REVISION')
-        buildClaudeResume({session,profile:target?.profile,mode:target?.mode})
+        buildClaudeResume({session:{...session,model:target?.model ?? session.model},profile:target?.profile,mode:target?.mode})
         try { await ports.preflight(structuredClone(session), structuredClone(target)) }
         catch { throw failure('PREFLIGHT_FAILED') }
         const switching = {...session,state:'switching',revision:session.revision + 1}
@@ -67,10 +67,10 @@ function createHandoffCoordinator(ports) {
           }
           phase = 'save'
           const next = {...switching,state:'ready',revision:session.revision + 2,
-            profileId:target.profile.id,mode:target.mode}
+            profileId:target.profile.id,mode:target.mode,...(target.model !== undefined ? {model:target.model} : {})}
           await persist(next)
           return next
-        } catch {
+        } catch (error) {
           let unknown = phase === 'source' || phase === 'start'
           if (handle) {
             try { await ports.stopTarget(handle) }
@@ -78,7 +78,7 @@ function createHandoffCoordinator(ports) {
           }
           const code = unknown ? 'PROCESS_OWNERSHIP_UNKNOWN'
             : phase === 'save' ? 'PERSISTENCE_FAILED'
-              : phase === 'identity' ? 'IDENTITY_MISMATCH' : 'TARGET_NOT_READY'
+              : phase === 'identity' ? 'IDENTITY_MISMATCH' : error.code === 'PROJECT_TRUST_REQUIRED' ? error.code : 'TARGET_NOT_READY'
           const recovery = {...session,state:unknown ? 'switching' : 'recoverable',
             revision:session.revision + 2,
             recovery:{targetProfileId:target.profile.id,targetMode:target.mode,code}}

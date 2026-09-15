@@ -26,8 +26,9 @@ import {
 } from "@phosphor-icons/react";
 import { ItemMenu, MoreMenu, type Action } from "./CodeManagement";
 
+import { CodeRepository } from "./CodeRepository";
 import { codeError } from "./errors";
-type Tab = "files" | "changes" | "preview";
+type Tab = "repository" | "files" | "changes" | "preview";
 export function CodeWorkspace({
   project,
   onClose,
@@ -37,7 +38,7 @@ export function CodeWorkspace({
 }) {
   const host = useHost(),
     bridge = host.services.code,
-    [tab, setTab] = useState<Tab>("files"),
+    [tab, setTab] = useState<Tab>("repository"),
     [folder, setFolder] = useState(""),
     [entries, setEntries] = useState<CodeFileEntry[]>([]),
     [changes, setChanges] = useState<CodeChange[]>([]),
@@ -65,7 +66,8 @@ export function CodeWorkspace({
     const token = ++request.current;
     setError("");
     try {
-      if (tab === "files") {
+      if (tab === "repository") { setReload(value => value + 1); }
+      else if (tab === "files") {
         const result = await bridge.invoke("listFiles", {
           projectId: project.id,
           path: folder,
@@ -82,7 +84,7 @@ export function CodeWorkspace({
           setChanges(result.changes);
           setTruncated(result.truncated);
         }
-      } else
+      } else if (tab === "preview")
         setPreviews(
           (await bridge.invoke("listPreviews", undefined)).filter(
             (p) => p.projectId === project.id && p.state === "ready",
@@ -286,7 +288,7 @@ export function CodeWorkspace({
   return (
     <aside className="code-inspector" aria-label="Project workspace">
       <div className="code-inspector-tabs">
-        {(["files", "changes", "preview"] as const).map((value) => (
+        {(["repository", "files", "changes", "preview"] as const).map((value) => (
           <ItemMenu
             key={value}
             actions={[
@@ -295,7 +297,7 @@ export function CodeWorkspace({
             ]}
           >
             <button aria-pressed={tab === value} onClick={() => setTab(value)}>
-              {value === "files"
+              {value === "repository" ? "Git" : value === "files"
                 ? "Files"
                 : value === "changes"
                   ? "Changes"
@@ -318,6 +320,7 @@ export function CodeWorkspace({
           {error}
         </p>
       )}
+      {tab === "repository" && <CodeRepository key={`${project.id}-${reload}`} project={project} />}
       {tab === "files" && (
         <>
           <div className="code-file-path">

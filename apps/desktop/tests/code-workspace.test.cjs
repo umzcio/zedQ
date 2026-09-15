@@ -24,3 +24,36 @@ test('git paths are literal; staged, unstaged, untracked, and rename status',asy
  assert.equal((await workspace(root,'gitDiff',{path:':(glob)*'})).diff,'')
  assert.equal(fs.existsSync(path.join(root,'INJECTED')),false)
 })
+
+test('repository overview reads history, detached and unborn branches, safe remotes and commit details', async t => {
+ const root=fixture(t), git=args=>execFileSync('/opt/homebrew/bin/git',['-C',root,...args],{encoding:'utf8'});
+ assert.equal((await workspace(root,'gitRepository',{})).isRepository,false);
+ git(['init','-q','-b','main']); git(['config','user.name','Fixture']); git(['config','user.email','fixture@example.test']);
+ assert.equal((await workspace(root,'gitRepository',{})).commits.length,0);
+ fs.writeFileSync(path.join(root,'file'),'content'); git(['add','.']); git(['commit','-qm','Initial subject with punctuation | :']);
+ git(['remote','add','origin','https://user:SECRET@github.com/example/repository.git']);
+ let result=await workspace(root,'gitRepository',{});
+ assert.equal(result.branch,'main'); assert.equal(result.commits[0].subject,'Initial subject with punctuation | :');
+ assert.equal(result.remotes[0].url,'https://github.com/example/repository');
+ assert.equal(JSON.stringify(result).includes('SECRET'),false);
+ assert.match((await workspace(root,'gitCommit',{hash:result.head})).diff,/content/);
+ await assert.rejects(workspace(root,'gitCommit',{hash:'--output=owned'}),{code:'INVALID_REQUEST'});
+ git(['checkout','--detach','-q']); result=await workspace(root,'gitRepository',{}); assert.equal(result.branch,null); assert.ok(result.head);
+ await assert.rejects(workspace(root,'gitRepository',{skip:-1}),{code:'INVALID_REQUEST'});
+});
+
+test('fetch updates tracking commits without merging or modifying working files',async t=>{
+ const base=fixture(t), remote=path.join(base,'remote.git'), source=path.join(base,'source'), checkout=path.join(base,'checkout');
+ const git=(cwd,args)=>execFileSync('/opt/homebrew/bin/git',['-C',cwd,...args],{encoding:'utf8',stdio:['ignore','pipe','ignore']});
+ fs.mkdirSync(source); git(source,['init','-q','-b','main']); git(source,['config','user.name','Fixture']); git(source,['config','user.email','fixture@example.test']);
+ fs.writeFileSync(path.join(source,'file'),'first'); git(source,['add','.']); git(source,['commit','-qm','First']);
+ git(base,['clone','--bare',source,remote]); git(base,['clone',remote,checkout]);
+ fs.writeFileSync(path.join(source,'file'),'second'); git(source,['commit','-qam','Second']); git(source,['push',remote,'main']);
+ const before=await workspace(checkout,'gitRepository',{}); assert.equal(before.behind,0);
+ await workspace(checkout,'gitFetch',{remote:'origin'});
+ const after=await workspace(checkout,'gitRepository',{}); assert.equal(after.behind,1); assert.equal(after.head,before.head); assert.ok(after.lastFetch);
+ assert.equal(fs.readFileSync(path.join(checkout,'file'),'utf8'),'first');
+ await assert.rejects(workspace(checkout,'gitFetch',{remote:'--upload-pack=oops'}),{code:'INVALID_REQUEST'});
+ git(checkout,['remote','set-url','origin',path.join(base,'missing')]);
+ await assert.rejects(workspace(checkout,'gitFetch',{remote:'origin'}),{code:'GIT_FETCH_FAILED'});
+});

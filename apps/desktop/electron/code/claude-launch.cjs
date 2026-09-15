@@ -24,7 +24,9 @@ function buildClaudeResume({profile, session, mode} = {}) {
     || !text(session.nativeId) || !uuid.test(session.nativeId)) fail('INVALID_SESSION')
   if (profile.hostId !== session.hostId) fail('HOST_MISMATCH')
   if (!['chat','terminal'].includes(mode) || !profile.modes.includes(mode)) fail('MODE_UNSUPPORTED')
+  if (session.model !== undefined && !validModel(session.model)) fail('INVALID_MODEL')
   const args = ['--resume', session.nativeId]
+  if (session.model && session.model !== 'default') args.push('--model', session.model)
   if (mode === 'chat') args.push('-p','--input-format','stream-json','--output-format','stream-json',
     '--verbose','--include-partial-messages')
   // Values are positional arguments, never executable shell source. The trusted
@@ -33,4 +35,5 @@ function buildClaudeResume({profile, session, mode} = {}) {
     profile.launcherFile,profile.functionName,...args], cwd:session.cwd}
 }
 
-module.exports = {buildClaudeResume}
+const validModel = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:/\[\]-]{0,199}$/.test(value)
+module.exports = {buildClaudeResume, validModel}

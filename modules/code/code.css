@@ -983,3 +983,26 @@
   overflow: hidden;
 }
 .code-setup-note{padding:9px 20px;font-size:12px;line-height:1.6;color:var(--muted);border-bottom:1px solid var(--line)}
+
+.code-repository { flex: 1; min-width: 0; padding: 26px 32px; overflow: auto; color: var(--text); }
+.code-repository h2 { margin: 0; font-size: 20px; }
+.code-repository h3 { font-size: 14px; margin: 24px 0 10px; }
+.code-repository-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
+.code-repository-heading > div { flex: 1; min-width: 0; }
+.code-repository-heading p { overflow-wrap: anywhere; margin: 6px 0 0; font-size: 12px; }
+.code-repository-summary, .code-repository-remotes { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; font-size: 13px; margin-bottom: 14px; }
+.code-repository-branch { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
+.code-repository-remotes small, .code-repository-note { color: var(--muted); font-size: 12px; }
+.code-repository-note { line-height: 1.6; }
+.code-repository-changes { font-size: 12px; margin: 16px 0; }
+.code-repository-changes > div { padding: 5px 0; overflow-wrap: anywhere; }
+.code-commit-row { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+.code-commit-row > button:first-child { flex: 1; min-width: 0; text-align: left; border: 0; background: none; color: var(--text); padding: 12px 6px; cursor: pointer; }
+.code-commit-row:hover { background: var(--hover); }
+.code-commit-row strong { display: block; font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.code-commit-row small { display: block; color: var(--muted); font-size: 11px; margin-top: 5px; }
+.code-commit-dialog { width: min(900px, 92vw); max-width: 900px; }
+.code-commit-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 65vh; overflow: auto; font-size: 12px; padding: 14px; background: var(--canvas); border: 1px solid var(--line); border-radius: 6px; }
+.code-inspector .code-repository { padding: 16px; }
+.code-model-field { display: grid; gap: 8px; }
+.code-model-field p { font-size: 12px; line-height: 1.6; margin: 0; }

@@ -9,7 +9,7 @@ const fresh = args.includes('--session-id'),
 const settings = JSON.parse(value('--settings'))
 const history = path.join(process.cwd(), id + '.history')
 if (!fresh && !fs.existsSync(history)) process.exit(1)
-fs.writeFileSync(history, id)
+if (process.env.LAZY_HISTORY !== '1') fs.writeFileSync(history, id)
 if (process.env.IGNORE_TERM === '1') {
   process.on('SIGTERM', () => {})
   process.on('SIGHUP', () => {})
@@ -21,13 +21,14 @@ execSync(hook, {
     session_id: id,
     cwd: process.cwd(),
     source: fresh ? 'startup' : 'resume',
-    hook_event_name: 'SessionStart'
+    hook_event_name: 'SessionStart',
+    transcript_path: history
   }),
   stdio: ['pipe', 'ignore', 'ignore']
 })
 if (args.includes('--input-format')) {
   const out = (m) => process.stdout.write(JSON.stringify(m) + '\n')
-  out({ type: 'system', subtype: 'init', session_id: id })
+  out({ type: 'system', subtype: 'init', session_id: id, model: args.includes('--model') ? value('--model') : 'fixture-default' })
   readline.createInterface({ input: process.stdin }).on('line', (line) => {
     const m = JSON.parse(line)
     if (m.type === 'control_request' && m.request.subtype === 'initialize')
@@ -42,6 +43,7 @@ if (args.includes('--input-format')) {
       out({ type: 'control_cancel_request', request_id: 'permission-1' })
       out({ type: 'result', session_id: id, is_error: false })
     } else if (m.type === 'user') {
+      fs.writeFileSync(history, id)
       out({
         type: 'assistant',
         session_id: id,

@@ -26,6 +26,7 @@ process.stdin.on('end', () => {
         nativeId: m.session_id,
         cwd: m.cwd,
         source: m.source,
+        ...(typeof m.transcript_path === 'string' && path.isAbsolute(m.transcript_path) ? { transcriptPath: m.transcript_path } : {}),
         nonce
       }),
       { flag: 'wx', mode: 0o600 }

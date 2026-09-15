@@ -75,20 +75,20 @@ function list(root, relative = '') {
   }
   return { entries, truncated: entries.length < names.length }
 }
-function git(root, args) {
+function git(root, args, options = {}) {
   const binary = [...(process.platform === 'darwin' ? ['/opt/homebrew/bin/git','/usr/local/bin/git'] : []),
     ...(process.env.PATH || '').split(path.delimiter).map(dir => path.join(dir,'git'))].find(file => {
       try { fs.accessSync(file,fs.constants.X_OK); return true } catch { return false }
     })
   if (!binary) fail('GIT_UNAVAILABLE')
-  const env = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_CONFIG_NOSYSTEM: '1', GIT_EXTERNAL_DIFF: '' }
+  const env = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_CONFIG_NOSYSTEM: '1', GIT_EXTERNAL_DIFF: '', GIT_TERMINAL_PROMPT: '0' }
   for (const key of ['GIT_DIR','GIT_WORK_TREE','GIT_INDEX_FILE','GIT_COMMON_DIR']) delete env[key]
   return new Promise((resolve, reject) => execFile(binary, ['--literal-pathspecs', '-C', root, ...args], {
-    encoding: 'utf8', timeout: 5000, maxBuffer: 256000,
+    encoding: 'utf8', timeout: options.fetch ? 30000 : 5000, maxBuffer: options.large ? 4 * 1024 * 1024 : 256000,
     env
   }, (err, stdout, stderr) => {
     if (!err) return resolve(stdout)
-    const code = /not a git repository/i.test(stderr || '') ? 'NOT_GIT_REPOSITORY' : 'GIT_UNAVAILABLE'
+    const code = options.fetch ? 'GIT_FETCH_FAILED' : /not a git repository/i.test(stderr || '') ? 'NOT_GIT_REPOSITORY' : 'GIT_UNAVAILABLE'
     reject(Object.assign(new Error(code), { code }))
   }))
 }
@@ -121,13 +121,78 @@ async function diff(root, input) {
   } else output = await git(root, ['diff', '--no-ext-diff', '--no-textconv', '--no-color', ...(input.staged ? ['--cached'] : []), '--', input.path])
   return { diff: output.slice(0,64000), truncated: output.length > 64000 }
 }
-const workspaceMethods = new Set(['listFiles','readFile','writeFile','gitStatus','gitDiff'])
+
+function remoteLink(raw) {
+  // Display a browser link only; never relay embedded HTTP credentials.
+  try {
+    const scp = raw.match(/^(?:[^@/:]+@)?([^/:]+):(.+)$/)
+    const url = new URL(scp && !raw.includes('://') ? `https://${scp[1]}/${scp[2]}` : raw)
+    if (!['https:', 'http:', 'ssh:'].includes(url.protocol)) return null
+    const safe = new URL(`https://${url.host}${url.pathname.replace(/\.git$/, '')}`)
+    return safe.href.replace(/\/$/, '')
+  } catch { return null }
+}
+async function repository(root, input = {}) {
+  const skip = input.skip ?? 0
+  if (!Number.isInteger(skip) || skip < 0 || skip > 1000000) fail('INVALID_REQUEST')
+  let top
+  try { top = (await git(root, ['rev-parse', '--show-toplevel'])).trim() }
+  catch (e) { if (e.code === 'NOT_GIT_REPOSITORY') return { isRepository: false }; throw e }
+  const optional = args => git(root, args).then(v => v.trim()).catch(() => null)
+  const [branch, head, upstream, names, changed] = await Promise.all([
+    optional(['symbolic-ref', '--quiet', '--short', 'HEAD']),
+    optional(['rev-parse', '--verify', 'HEAD']),
+    optional(['rev-parse', '--abbrev-ref', '@{upstream}']),
+    git(root, ['remote']), status(root),
+  ])
+  const remotes = await Promise.all(names.trim().split('\n').filter(Boolean).map(async name => ({
+    name, url: remoteLink((await optional(['remote', 'get-url', '--', name])) || ''),
+  })))
+  let ahead = null, behind = null
+  if (head && upstream) {
+    const counts = await optional(['rev-list', '--left-right', '--count', 'HEAD...@{upstream}'])
+    if (counts) [ahead, behind] = counts.split(/\s+/).map(Number)
+  }
+  const commits = []
+  if (head) {
+    // NUL fields avoid collisions with punctuation in subjects/author names.
+    const raw = await git(root, ['log', '--no-show-signature', '-31', `--skip=${skip}`, '--format=%H%x00%h%x00%an%x00%aI%x00%s%x00'], { large: true })
+    const fields = raw.split('\0')
+    for (let i = 0; i + 4 < fields.length; i += 5) {
+      const hash = fields[i].trim()
+      if (/^[a-f0-9]{40,64}$/.test(hash)) commits.push({ hash, shortHash: fields[i+1], author: fields[i+2], date: fields[i+3], subject: fields[i+4] })
+    }
+  }
+  let lastFetch = null
+  try {
+    const file = (await git(root, ['rev-parse', '--git-path', 'FETCH_HEAD'])).trim()
+    lastFetch = fs.statSync(path.resolve(root, file)).mtimeMs
+  } catch {}
+  return { isRepository: true, root: top, branch, head, upstream, ahead, behind, remotes,
+    changes: changed.changes, changesTruncated: changed.truncated, commits: commits.slice(0,30), hasMore: commits.length > 30, lastFetch }
+}
+async function commitDetail(root, input) {
+  if (typeof input.hash !== 'string' || !/^[a-f0-9]{40,64}$/.test(input.hash)) fail('INVALID_REQUEST')
+  const output = await git(root, ['show', '--format=fuller', '--stat', '--patch', '--no-ext-diff', '--no-textconv', '--no-color', input.hash, '--'], { large: true })
+  return { diff: output.slice(0,64000), truncated: output.length > 64000 }
+}
+async function fetchRepository(root, input) {
+  const names = (await git(root, ['remote'])).trim().split('\n')
+  if (typeof input.remote !== 'string' || !names.includes(input.remote) || input.remote.startsWith('-')) fail('INVALID_REQUEST')
+  await git(root, ['-c', 'core.hooksPath=/dev/null', 'fetch', '--no-recurse-submodules', '--', input.remote], { fetch: true })
+  return { ok: true }
+}
+
+const workspaceMethods = new Set(['listFiles','readFile','writeFile','gitStatus','gitDiff','gitRepository','gitCommit','gitFetch'])
 async function workspace(root, method, input) {
   if (method === 'listFiles') return list(root, input.path)
   if (method === 'readFile') return read(root, input.path)
   if (method === 'writeFile') return write(root, input)
   if (method === 'gitStatus') return status(root)
   if (method === 'gitDiff') return diff(root, input)
+  if (method === 'gitRepository') return repository(root, input)
+  if (method === 'gitCommit') return commitDetail(root, input)
+  if (method === 'gitFetch') return fetchRepository(root, input)
   fail('UNKNOWN_METHOD')
 }
 module.exports = { workspace, workspaceMethods, resolveFile, MAX_FILE }

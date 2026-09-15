@@ -495,3 +495,21 @@ test('explicit profile setup is interactive without native claims and excludes a
  const resumed=await a.invoke('resumeSession',{id:original.id,expectedRevision:stopped.revision})
  assert.equal(resumed.state,'ready');assert.equal(resumed.nativeId,original.nativeId)
 })
+
+test('empty Chat switches interfaces and models before a transcript exists, then resumes saved history', async t => {
+ const h=setup(t), a=h.service();
+ fs.writeFileSync(h.launch, `claude-a() { LAZY_HISTORY=1 '${process.execPath}' '${path.join(__dirname,'fixtures/code/structured-agent.cjs')}' "$@"; }\n`);
+ const project=await a.invoke('createProject',{name:'Empty',cwd:h.root});
+ const profile=await a.invoke('createProfile',{name:'A',launcherFile:h.launch,functionName:'claude-a',sharedHistoryConfirmed:true});
+ const first=await a.invoke('createSession',{projectId:project.id,profileId:profile.id,mode:'chat',model:'sonnet'});
+ assert.equal(first.state,'ready'); assert.equal(fs.existsSync(path.join(h.root,first.nativeId+'.history')),false);
+ const second=await a.invoke('switchSession',{id:first.id,expectedRevision:first.revision,profileId:profile.id,mode:'terminal',model:'opus'});
+ assert.equal(second.state,'ready',JSON.stringify(second)); assert.equal(second.nativeId,first.nativeId); assert.equal(second.model,'opus');
+ const third=await a.invoke('switchSession',{id:second.id,expectedRevision:second.revision,profileId:profile.id,mode:'chat',model:'haiku'});
+ assert.equal(third.state,'ready',JSON.stringify(third)); assert.equal(third.nativeId,first.nativeId);
+ assert.equal((await a.invoke('snapshot')).sessions.find(s=>s.id===third.id).resolvedModel,'haiku');
+ await a.invoke('sendMessage',{id:third.id,text:'persist this conversation'});
+ await until(async()=>(await a.invoke('snapshot')).sessions.find(s=>s.id===third.id).state==='ready');
+ const fourth=await a.invoke('switchSession',{id:third.id,expectedRevision:third.revision,profileId:profile.id,mode:'terminal'});
+ assert.equal(fourth.state,'ready');assert.equal(fourth.model,'haiku');assert.equal(fourth.nativeId,first.nativeId);
+});

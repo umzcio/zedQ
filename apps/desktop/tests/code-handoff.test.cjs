@@ -150,3 +150,11 @@ test('different sessions can hand off concurrently',async () => {
   gate.resolve()
   await first
 })
+
+test('folder trust gates retain the old conversation and expose the native setup requirement',async()=>{
+ const h=harness({ready:async()=>{throw error('PROJECT_TRUST_REQUIRED')}},{model:'sonnet'});
+ const next=await h.coordinator.switchController({...request,target:{...target,model:'opus'}});
+ assert.equal(next.state,'recoverable');assert.equal(next.recovery.code,'PROJECT_TRUST_REQUIRED');
+ assert.equal(next.nativeId,nativeId);assert.equal(next.profileId,'a');assert.equal(next.model,'sonnet');
+ assert.ok(h.events.includes('cleanup'));
+});

@@ -45,6 +45,8 @@ export interface CodeSession {
   cwd: string
   profileId: string
   nativeId: string
+  model?: string
+  resolvedModel?: string
   nativeIdVerified: boolean
   ownership?: 'owned' | 'external'
   adapter?: 'claude' | 'terminal'
@@ -113,6 +115,15 @@ export type CodeProfileInput = Pick<
 export interface CodeFileEntry { path: string; name: string; kind: 'file' | 'directory' | 'symlink'; size: number }
 export interface CodeFile { path: string; text: string; fingerprint: string }
 export interface CodeChange { path: string; previousPath?: string; index: string; worktree: string; untracked: boolean }
+export interface CodeCommit { hash: string; shortHash: string; author: string; date: string; subject: string }
+export interface CodeRepository {
+  isRepository: boolean
+  root?: string; branch?: string | null; head?: string | null; upstream?: string | null
+  ahead?: number | null; behind?: number | null
+  remotes?: { name: string; url: string | null }[]
+  changes?: CodeChange[]; changesTruncated?: boolean
+  commits?: CodeCommit[]; hasMore?: boolean; lastFetch?: number | null
+}
 export interface CodePreview { id: string; projectId: string; sourceUrl: string; url: string; forwarded: boolean; state: 'ready' | 'stopped'; error?: string }
 export interface CodeExternalTerminal { target: string; name: string; attached: boolean; ownership: 'external' }
 export type CodeHostInput = { name: string; sshAlias: string }
@@ -126,6 +137,9 @@ export interface CodeOperations {
   listFiles: { input: { projectId: string; path?: string }; output: { entries: CodeFileEntry[]; truncated: boolean } }
   readFile: { input: { projectId: string; path: string }; output: CodeFile }
   writeFile: { input: { projectId: string; path: string; text: string; fingerprint: string }; output: CodeFile }
+  gitRepository: { input: { projectId: string; skip?: number }; output: CodeRepository }
+  gitCommit: { input: { projectId: string; hash: string }; output: { diff: string; truncated: boolean } }
+  gitFetch: { input: { projectId: string; remote: string }; output: { ok: true } }
   gitStatus: { input: { projectId: string }; output: { changes: CodeChange[]; truncated: boolean } }
   gitDiff: { input: { projectId: string; path: string; staged?: boolean }; output: { diff: string; truncated: boolean } }
   revealFile: { input: { projectId: string; path: string }; output: { ok: true } }
@@ -158,6 +172,7 @@ export interface CodeOperations {
       projectId: string
       profileId: string
       mode: CodeMode
+      model?: string
       title?: string
     }
     output: CodeSession
@@ -180,6 +195,7 @@ export interface CodeOperations {
       expectedRevision: number
       profileId: string
       mode: CodeMode
+      model?: string
     }
     output: CodeSession
   }

@@ -18,3 +18,9 @@ The complete desktop suite passed with 890 tests passing and 52 explicitly skipp
 SSH bootstrap, transport, persistence and filesystem behavior were exercised through an isolated transport fixture. A real remote host, its authentication and live SSH port forwarding were not available for end-to-end verification. Local prerequisites are tmux and the selected CLI; remote hosts also require Node, zsh and configured SSH trust/authentication.
 
 The file editor supports existing text files up to 24 KB; it is not a full IDE. Generic CLI profiles are terminal-only. Native account authentication remains with each CLI; expired profiles require the explicit setup terminal. No credentials are copied between profiles.
+
+## Repository, models and startup recovery follow-up
+
+The updated suite passed with 901 tests passing and 52 explicitly skipped, using the Command Line Tools developer directory. The single-module build and ARM64 package passed. Packaged UI checks in a separate data directory exercised commit pagination/details/context menus, local-remote Fetch, model selection, empty Chat → Terminal → Chat handoffs, and dark mode. The existing signed Keychain helper retained its exact designated identity.
+
+Read-only checks in the regular workspace confirmed branch, remotes and commit history for both existing projects. Recovery of the user's original empty FCS Edge conversation identified Claude's previously hidden folder-trust prompt. A native profile setup terminal was opened for the user to answer; the original conversation remains recoverable. No native trust approval was granted automatically. Live continuation with this profile remains dependent on completing that setup.

@@ -1,6 +1,6 @@
 {
   "id": "zq.code",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "apiVersion": 1,
   "title": "Code",
   "view": "Code",
@@ -9,6 +9,7 @@
     "workspace.read",
     "commands",
     "code.v1",
+    "code.repository-models.v1",
     "clipboard",
     "ui.tooltips.v1"
   ]

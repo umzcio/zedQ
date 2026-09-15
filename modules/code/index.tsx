@@ -33,6 +33,8 @@ import {
 } from "@phosphor-icons/react";
 import { CodeTerminal } from "./CodeTerminal";
 import { CodeChat } from "./CodeChat";
+import { CodeModel } from "./CodeModel";
+import { CodeRepository } from "./CodeRepository";
 import { CodeWorkspace } from "./CodeWorkspace";
 import { CodeHosts, ExternalTerminals } from "./CodeHosts";
 import {
@@ -68,6 +70,7 @@ function CodeRoot() {
     [switchTo, setSwitchTo] = useState<{
       profileId: string;
       mode: CodeMode;
+      model?: string;
     } | null>(null);
   const refresh = useCallback(
     () =>
@@ -434,6 +437,11 @@ function CodeRoot() {
                       {profile?.name || "Profile"}
                       <CaretRight size={12} />
                     </button>
+                    {session.adapter !== "terminal" && session.ownership !== "external" && <button
+                      className="code-profile-button" disabled={busy || !canSwitch(session)}
+                      aria-label="Change Claude model" onClick={() => setSwitchTo({ profileId: session.profileId, mode: session.mode, model: session.model || "default" })}>
+                      {session.resolvedModel || (session.model && session.model !== "default" ? session.model : "Profile default")}<CaretRight size={12}/>
+                    </button>}
                     <MoreMenu
                       label="Session actions"
                       actions={sessionActions(session)}
@@ -567,7 +575,7 @@ function CodeRoot() {
                 </>
               ) : (
                 <div className="code-session-body">
-                  <div className="code-empty">
+                  {project ? <CodeRepository key={project.id} project={project} onNewSession={() => { setSetup(false); setNewSession(true); }} /> : <div className="code-empty">
                     <TerminalWindow size={36} weight="light" />
                     <h1>Your code. Your agents.</h1>
                     <p>
@@ -586,7 +594,7 @@ function CodeRoot() {
                         <Button
                           onClick={() => {
                             setProjectId(
-                              project?.id || snapshot.projects[0].id,
+                              snapshot.projects[0].id,
                             );
                             setSetup(false);
                             setNewSession(true);
@@ -597,13 +605,12 @@ function CodeRoot() {
                         </Button>
                       )}
                     </div>
-                    {project && <p className="code-muted">{project.cwd}</p>}
                     {error && (
                       <p role="alert" className="code-form-error">
                         {error}
                       </p>
                     )}
-                  </div>
+                  </div>}
                   {workspace && project && (
                     <CodeWorkspace
                       key={project.id}
@@ -729,9 +736,10 @@ function CodeRoot() {
                       ]}
                     />
                   </label>
+                  <CodeModel value={switchTo.model ?? session.model ?? "default"} onChange={model => setSwitchTo({ ...switchTo, model })} />
                   {error && (
                     <p role="alert" className="code-form-error">
-                      {error}
+                      {codeError(error)}
                     </p>
                   )}
                   <div className="code-actions">
@@ -742,7 +750,7 @@ function CodeRoot() {
                     >
                       Cancel
                     </Button>
-                    <Button disabled={busy || !canSwitch(session)}>
+                    <Button disabled={busy || !canSwitch(session) || switchTo.model === ""}>
                       {busy ? "Switching…" : "Switch and continue"}
                     </Button>
                   </div>
@@ -777,6 +785,7 @@ function NewSession({
     [profile, setProfile] = useState(""),
     [mode, setMode] = useState<CodeMode>("chat"),
     [title, setTitle] = useState(""),
+    [model, setModel] = useState("default"),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -831,6 +840,7 @@ function NewSession({
                     projectId: project,
                     profileId: profile,
                     mode,
+                    ...(!terminalOnly ? { model } : {}),
                     ...(title.trim() ? { title: title.trim() } : {}),
                   })
             )
@@ -864,6 +874,7 @@ function NewSession({
             />
           </label>
           {!profiles.length && <p>Add a profile from Manage profiles first.</p>}
+          {!terminalOnly && !setup && <CodeModel value={model} onChange={setModel} />}
           <label>
             Interface
             <SelectField
@@ -898,7 +909,7 @@ function NewSession({
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancel
             </Button>
-            <Button disabled={busy || !project || !profile}>
+            <Button disabled={busy || !project || !profile || (!terminalOnly && !setup && !model)}>
               {busy ? "Starting…" : "Start session"}
             </Button>
           </div>

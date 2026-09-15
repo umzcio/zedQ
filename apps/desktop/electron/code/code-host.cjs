@@ -8,7 +8,7 @@ const {
   keys,
   text
 } = require('./code-catalog.cjs')
-const { buildClaudeResume } = require('./claude-launch.cjs')
+const { buildClaudeResume, validModel } = require('./claude-launch.cjs')
 const { createHandoffCoordinator } = require('./handoff.cjs')
 const { requestRunner } = require('./structured-runner.cjs')
 const { fail } = require('./service-storage.cjs')
@@ -45,6 +45,7 @@ class CodeHost {
       },
       save: async (s) => {
         const current = this.session(s.id)
+        if (s.state === 'ready') { delete current.resolvedModel; delete s.resolvedModel }
         if (!Object.hasOwn(s, 'recovery')) delete current.recovery
         Object.assign(current, s, {
           pid: current.pid,
@@ -122,12 +123,14 @@ class CodeHost {
           s.state !== r.state ||
           s.nativeIdVerified !== !!r.nativeId ||
           s.error !== nextError ||
+          (r.model && s.resolvedModel !== r.model) ||
           this.eventCursors.get(s.id) !== r.seq
         if (changed) {
           this.eventCursors.set(s.id, r.seq)
           s.state = r.ended ? 'stopped' : r.state
           s.nativeIdVerified = !!r.nativeId
           s.error = nextError
+          if (r.model) s.resolvedModel = r.model
           this.catalog.save()
         }
       } catch {
@@ -161,7 +164,26 @@ class CodeHost {
       fail('SHARED_HISTORY_UNCONFIRMED')
     if (!s.nativeIdVerified) fail('IDENTITY_UNVERIFIED')
   }
-  async start(s, { profile, mode }, fresh) {
+  emptyConversation(s) {
+    // A new stream-json session has an identity before Claude writes a transcript.
+    // Only reuse --session-id when we can prove there is no conversation to resume.
+    try {
+      const controller = privateRead(path.join(this.paths.root, s.id + '.controller.json'))
+      const receipt = privateRead(controller.receipt)
+      if (receipt.nativeId !== s.nativeId || receipt.cwd !== s.cwd) return false
+      if (typeof receipt.transcriptPath === 'string' && path.isAbsolute(receipt.transcriptPath)) {
+        try { return fs.statSync(receipt.transcriptPath).size === 0 }
+        catch (e) { if (e.code === 'ENOENT') return true; throw e }
+      }
+    } catch { /* A failed target may never have produced a receipt. */ }
+    try {
+      // Compatibility for old, never-used Chat sessions, whose hooks omitted the path.
+      const journal = privateRead(path.join(this.paths.root, s.id + '.events.json'))
+      return s.mode === 'chat' && journal.seq === journal.events.length &&
+        journal.events.every(e => ['profile','status'].includes(e.kind) && e.text !== 'Profile active in Terminal')
+    } catch { return false }
+  }
+  async start(s, { profile, mode, model = s.model }, fresh) {
     if (!fresh && !nativeExitConfirmed(this.paths.root, s.id, s.mode !== 'chat')) fail('PROCESS_OWNERSHIP_UNKNOWN')
     if (s.adapter === 'terminal' || profile.adapter === 'terminal') {
       if (!fresh) fail('RESUME_UNSUPPORTED')
@@ -174,7 +196,8 @@ class CodeHost {
       this.catalog.save()
       return { id: s.id, mode, generic: true, profileId: profile.id }
     }
-    const launch = buildClaudeResume({ session: s, profile, mode })
+    fresh = fresh || this.emptyConversation(s)
+    const launch = buildClaudeResume({ session: { ...s, model }, profile, mode })
     try {
       const old = privateRead(
         path.join(this.paths.root, s.id + '.controller.json')
@@ -280,6 +303,11 @@ class CodeHost {
         receipt = privateRead(h.receipt)
       } catch (e) {
         if (e.code !== 'ENOENT') throw e
+      }
+      if (!receipt && h.mode === 'terminal' && this.tmux.capture) {
+        const screen = await this.tmux.capture(this.name(h.id))
+        // Recognize native setup gates without persisting or relaying terminal output.
+        if (/Yes, I trust this folder|Is this a project you created or one you trust/i.test(screen)) fail('PROJECT_TRUST_REQUIRED')
       }
       if (receipt) {
         if (
@@ -442,13 +470,14 @@ class CodeHost {
       return this.catalog[method](input)
     if (method === 'createSession' || method === 'createSetupSession') {
       const setup = method === 'createSetupSession'
-      keys(input, setup ? ['projectId', 'profileId', 'title'] : ['projectId', 'profileId', 'mode', 'title'])
+      keys(input, setup ? ['projectId', 'profileId', 'title'] : ['projectId', 'profileId', 'mode', 'title', 'model'])
       if (setup) input = { ...input, mode: 'terminal' }
       if (
         !['chat', 'terminal'].includes(input.mode) ||
         (input.title !== undefined && !text(input.title, 200))
       )
         fail('INVALID_REQUEST')
+      if (input.model !== undefined && !validModel(input.model)) fail('INVALID_MODEL')
       if (this.catalog.value.sessions.length >= 32) fail('LIMIT_REACHED')
       const project = this.catalog.find('projects', input.projectId),
         profile = this.catalog.find('profiles', input.profileId)
@@ -469,6 +498,7 @@ class CodeHost {
         profileId: profile.id,
         nativeId: adapter === 'terminal' ? '' : randomUUID(),
         adapter,
+        model: input.model || 'default',
         ...(setup ? { purpose: 'profile-setup' } : {}),
         ownership: 'owned',
         nativeIdVerified: false,
@@ -587,10 +617,11 @@ class CodeHost {
         'profiles',
         input.profileId || s.profileId
       )
+      if (input.model !== undefined && !validModel(input.model)) fail('INVALID_MODEL')
       await this.coordinator.switchController({
         sessionId: s.id,
         expectedRevision: input.expectedRevision,
-        target: { profile, mode: input.mode || s.mode }
+        target: { profile, mode: input.mode || s.mode, model: input.model ?? s.model }
       })
       return this.session(s.id)
     }

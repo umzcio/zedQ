@@ -9,7 +9,7 @@ const { Previews } = require('./preview.cjs')
 const { resolveFile } = require('./workspace.cjs')
 const METHODS = new Set([
   'createHost', 'updateHost', 'deleteHost', 'discoverHosts', 'connectHost', 'disconnectHost',
-  'listFiles', 'readFile', 'writeFile', 'gitStatus', 'gitDiff', 'revealFile',
+  'listFiles', 'readFile', 'writeFile', 'gitStatus', 'gitDiff', 'gitRepository', 'gitCommit', 'gitFetch', 'revealFile',
   'discoverTerminals', 'attachExternalTerminal', 'openPreview', 'stopPreview', 'listPreviews',
   'snapshot',
   'pickDirectory',
@@ -82,6 +82,7 @@ class CodeService {
     this.closed = false
     this.terminals = new Map()
     this.attachments = new Map()
+    this.readRequests = new Map()
     this.seq = -1
     this.client = null
     this.connecting = null
@@ -118,7 +119,16 @@ class CodeService {
         })
     return this.connecting
   }
-  async localRequest(method, input) {
+  localRequest(method, input) {
+    if (!['snapshot', 'events'].includes(method)) return this.performLocalRequest(method, input)
+    const key = method + JSON.stringify(input || {})
+    if (!this.readRequests.has(key)) {
+      const request = this.performLocalRequest(method, input).finally(() => this.readRequests.delete(key))
+      this.readRequests.set(key, request)
+    }
+    return this.readRequests.get(key)
+  }
+  async performLocalRequest(method, input) {
     try {
       return await (
         await this.connection()

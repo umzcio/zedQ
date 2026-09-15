@@ -264,6 +264,7 @@ async function run(root, id) {
             nativeId: receiptVerified && !error ? config.nativeId : null,
             state: error ? 'error' : receiptVerified && protocol.initialized ? protocol.state : 'starting',
             initialized: protocol.initialized,
+            model: protocol.model || null,
             pid: child.pid,
             error,
             pending: protocol.pending.size,

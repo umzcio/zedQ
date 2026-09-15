@@ -52,6 +52,7 @@ class ClaudeProtocol {
       fail('IDENTITY_MISMATCH')
     if (m.type === 'system' && m.subtype === 'init') {
       if (m.session_id !== this.nativeId) fail('IDENTITY_MISMATCH')
+      if (typeof m.model === 'string') this.model = m.model.slice(0, 200)
       this.verified = true
       this.state = 'ready'
       this.event({ kind: 'status', text: 'Session connected' })

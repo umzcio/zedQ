@@ -40,3 +40,12 @@ for (const [name, change, code] of [
     return true
   })
 })
+
+test('explicit models are positional CLI arguments in both interfaces; default preserves launcher configuration',()=>{
+ for(const mode of ['chat','terminal']) {
+  const args=buildClaudeResume({profile,session:{...session,model:'opus'},mode}).args;
+  assert.equal(args[args.indexOf('--model')+1],'opus');
+  assert.equal(buildClaudeResume({profile,session:{...session,model:'default'},mode}).args.includes('--model'),false);
+ }
+ for(const model of ['', '--evil','a; touch /tmp/bad','x\nsecret']) assert.throws(()=>buildClaudeResume({profile,session:{...session,model},mode:'chat'}),{code:'INVALID_MODEL'});
+});

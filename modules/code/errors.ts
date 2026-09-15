@@ -1,4 +1,9 @@
 const messages: Record<string, string> = {
+  INVALID_REQUEST: "This action could not be processed. Refresh the session and try again.",
+  INVALID_MODEL: "Enter a valid Claude model name or choose a model from the list.",
+  GIT_FETCH_FAILED: "Fetch failed. Check your network and Git remote authentication, then retry. Your working files were not changed.",
+  SERVICE_REQUEST_TIMEOUT: "The session took too long to respond. Reconnect to check its current state before retrying.",
+  PROJECT_TRUST_REQUIRED: "Claude needs your one-time approval to work in this folder. Open setup terminal, confirm folder trust there, then stop setup and resume this conversation.",
   PROJECT_SESSION_ACTIVE:
     "Stop the active sessions in this project before opening a setup terminal.",
   PROCESS_OWNERSHIP_UNKNOWN:

@@ -82,3 +82,33 @@ test('successful recovery clears persisted stale recovery and error in both resu
  const saved=JSON.parse(fs.readFileSync(path.join(root,'code.json'))).sessions[0]
  assert.equal(saved.error,null);assert.equal(saved.recovery,undefined)
 })
+
+test('background snapshot and event polls coalesce during a slow handoff instead of filling the request queue',async t=>{
+ const {CodeService}=require('../electron/code/code-service.cjs'),root=fs.mkdtempSync('/tmp/zq-polls-');
+ const service=new CodeService({directory:root,tmuxPath:null,pty:{}});
+ t.after(()=>{service.close();fs.rmSync(root,{recursive:true,force:true})});
+ let calls=0,release;
+ service.performLocalRequest=async()=>{calls++;await new Promise(r=>release=r);return {seq:1}};
+ const polls=Array.from({length:40},()=>service.localRequest('snapshot'));
+ assert.equal(calls,1);release();await Promise.all(polls);
+ const next=service.localRequest('snapshot');assert.equal(calls,2);release();await next;
+});
+
+test('an old empty Chat remains recoverable after a failed target replaced its receipt path',t=>{
+ const {root,host}=setup(t),id='empty';
+ const put=(name,value)=>fs.writeFileSync(path.join(root,name),JSON.stringify(value),{mode:0o600});
+ put(id+'.controller.json',{receipt:path.join(root,'missing.receipt.json')});
+ put(id+'.events.json',{seq:2,events:[{kind:'profile',text:'Profile active in Chat'},{kind:'status',text:'Agent stopped'}]});
+ assert.equal(host.emptyConversation({id,mode:'chat'}),true);
+ put(id+'.events.json',{seq:2,events:[{kind:'user',text:'Existing conversation'},{kind:'status',text:'Agent stopped'}]});
+ assert.equal(host.emptyConversation({id,mode:'chat'}),false);
+ put(id+'.events.json',{seq:300,events:[{kind:'status',text:'Agent stopped'}]});
+ assert.equal(host.emptyConversation({id,mode:'chat'}),false);
+});
+
+test('native folder trust is surfaced before a terminal handoff can silently time out', async t=>{
+ const {root,host}=setup(t);
+ host.tmux.inspect=async()=>({pid:123});
+ host.tmux.capture=async()=> 'Quick safety check: Is this a project you created or one you trust?\nYes, I trust this folder';
+ await assert.rejects(host.ready({id:'trust',mode:'terminal',receipt:path.join(root,'not-yet-written'),expected:'native',cwd:root}),{code:'PROJECT_TRUST_REQUIRED'});
+});
