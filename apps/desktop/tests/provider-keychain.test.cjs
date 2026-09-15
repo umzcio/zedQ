@@ -112,6 +112,42 @@ test('malformed success payloads cannot masquerade as credentials', async () => 
   }
 })
 
+test('authorization requests run one at a time and a cancellation releases the queue', async () => {
+  const fake = helper(() => {})
+  const credentials = store(fake)
+  const first = credentials.get('first')
+  const rejected = assert.rejects(first, /cancelled/)
+  const second = credentials.set('second', 'sk-isolated')
+  const third = credentials.delete('third')
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(fake.calls.length, 1)
+  reply(fake.calls[0].child, { ok: false, status: -128 })
+  await rejected
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(fake.calls.length, 2)
+  assert.equal(fake.calls[1].request.operation, 'set')
+  reply(fake.calls[1].child, { ok: true })
+  await second
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(fake.calls.length, 3)
+  assert.equal(fake.calls[2].request.operation, 'delete')
+  reply(fake.calls[2].child, { ok: true })
+  await third
+})
+
+test('default authorization window allows password entry beyond thirty seconds', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const fake = helper(() => {})
+  const credentials = store(fake)
+  const result = credentials.get('slow-approval')
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(fake.calls.length, 1)
+  t.mock.timers.tick(31000)
+  assert.equal(fake.calls[0].child.killed, undefined)
+  reply(fake.calls[0].child, { ok: true, key: null })
+  assert.equal(await result, null)
+})
+
 const nativeHelper = path.join(__dirname, '../native/bin/provider-keychain')
 test('compiled helper rejects malformed and oversized input before any Keychain access', {
   skip: process.platform !== 'darwin' || !existsSync(nativeHelper),

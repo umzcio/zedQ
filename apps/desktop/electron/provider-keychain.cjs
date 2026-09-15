@@ -7,7 +7,7 @@ const validKey = key => typeof key === 'string' && /^[\x21-\x7e]{1,8192}$/.test(
 
 // The helper owns the native Keychain ACL. Secrets are never argv, environment
 // variables, shell input, temporary files, logs, or renderer snapshots.
-function createCredentialStore({ directory, helperPath = path.join(__dirname, '../native/bin/provider-keychain'), platform = process.platform, spawn = spawnProcess, timeoutMs = 30000 }) {
+function createCredentialStore({ directory, helperPath = path.join(__dirname, '../native/bin/provider-keychain'), platform = process.platform, spawn = spawnProcess, timeoutMs = 120000 }) {
   if (typeof directory !== 'string' || !directory || directory.includes('\0')) throw new Error('Invalid credential workspace')
   if (typeof helperPath !== 'string' || !path.isAbsolute(helperPath) || helperPath.includes('\0')) throw new Error('Invalid Keychain helper path')
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120000) throw new Error('Invalid Keychain timeout')
@@ -39,7 +39,7 @@ function createCredentialStore({ directory, helperPath = path.join(__dirname, '.
           // Do not inherit API keys or dynamic-loader injection from the shell.
           env: { PATH: '/usr/bin:/bin' },
         })
-        timer = setTimeout(() => fail('Keychain request timed out. Unlock your login keychain and try again.'), timeoutMs)
+        timer = setTimeout(() => fail('Keychain authorization timed out. Retry, then approve the macOS dialog within two minutes.'), timeoutMs)
         child.on('error', () => fail('Keychain helper could not start. Rebuild or reinstall zQ.'))
         child.stdin.on('error', () => fail('Keychain helper communication failed.'))
         const collect = (chunk, keep) => {
@@ -74,10 +74,20 @@ function createCredentialStore({ directory, helperPath = path.join(__dirname, '.
     })
   }
 
+  // macOS authorization is interactive. Launch one helper at a time so
+  // unrelated connector restores cannot stack password dialogs. A queued
+  // operation gets its full timeout only when its own helper starts.
+  let pending = Promise.resolve()
+  const enqueue = (operation, id, key) => {
+    const result = pending.then(() => request(operation, id, key))
+    pending = result.then(() => undefined, () => undefined)
+    return result
+  }
+
   return {
-    get: id => request('get', id),
-    set: (id, key) => request('set', id, key),
-    delete: id => request('delete', id),
+    get: id => enqueue('get', id),
+    set: (id, key) => enqueue('set', id, key),
+    delete: id => enqueue('delete', id),
   }
 }
 module.exports = { createCredentialStore }
