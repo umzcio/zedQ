@@ -1,0 +1,15 @@
+{
+  "id": "zq.code",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "title": "Code",
+  "view": "Code",
+  "icon": "code",
+  "capabilities": [
+    "workspace.read",
+    "commands",
+    "code.v1",
+    "clipboard",
+    "ui.tooltips.v1"
+  ]
+}

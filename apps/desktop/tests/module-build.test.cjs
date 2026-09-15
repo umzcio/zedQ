@@ -53,7 +53,7 @@ test('a selected module builds alone, shares runtime React, and signs code and C
 
 test('a full build packages all modules with only the public verification key', async t => {
   const {root,keyPath,key} = await fixture(t)
-  for (const name of ['hq','notes','tasks']) {
+  for (const name of ['hq','notes','tasks','code']) {
     await fs.cp(path.join(root,'modules/chat'),path.join(root,'modules',name),{recursive:true})
     const manifestPath = path.join(root,'modules',name,'manifest.json')
     const manifest = JSON.parse(await fs.readFile(manifestPath,'utf8'))
@@ -61,9 +61,9 @@ test('a full build packages all modules with only the public verification key', 
     await fs.writeFile(manifestPath,JSON.stringify(manifest))
   }
   const {buildModules} = await load('build-modules.mjs')
-  assert.equal((await buildModules({root,signingKeyPath:keyPath})).length,4)
+  assert.equal((await buildModules({root,signingKeyPath:keyPath})).length,5)
   const bundleDirectory = path.join(root,'apps/desktop/bundled-modules')
-  assert.deepEqual((await fs.readdir(bundleDirectory)).sort(),['chat.zqmodule','hq.zqmodule','notes.zqmodule','tasks.zqmodule','trusted-keys.json'])
+  assert.deepEqual((await fs.readdir(bundleDirectory)).sort(),['chat.zqmodule','code.zqmodule','hq.zqmodule','notes.zqmodule','tasks.zqmodule','trusted-keys.json'])
   const trust = JSON.parse(await fs.readFile(path.join(bundleDirectory,'trusted-keys.json'),'utf8'))
   assert.deepEqual(trust,{[key.keyId]:key.publicKey})
 })

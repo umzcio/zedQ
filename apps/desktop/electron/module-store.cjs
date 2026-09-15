@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const MAX_PACKAGE_BYTES = 16 * 1024 * 1024;
-const VIEWS = { 'zq.hq': 'HQ', 'zq.notes': 'Notes', 'zq.tasks': 'Tasks', 'zq.chat': 'Chat' };
+const VIEWS = { 'zq.hq': 'HQ', 'zq.notes': 'Notes', 'zq.tasks': 'Tasks', 'zq.chat': 'Chat', 'zq.code': 'Code' };
 const HASH = /^[a-f0-9]{64}$/;
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -92,7 +92,7 @@ class ModuleStore {
     }));
     this.bundles = new Map();
     this.entries = new Map();
-    if (!Array.isArray(bundles) || bundles.length !== 4) throw new Error('All four bundled modules are required');
+    if (!Array.isArray(bundles) || bundles.length < 4 || bundles.length > 5 || ['zq.hq','zq.notes','zq.tasks','zq.chat'].some(id => !bundles.some(item => item?.manifest?.id === id))) throw new Error('All core bundled modules are required');
     for (const input of bundles) {
       const artifact = this.verify(input, false);
       if (this.bundles.has(artifact.manifest.id)) throw new Error('Duplicate bundled module');

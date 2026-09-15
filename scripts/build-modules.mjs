@@ -7,7 +7,7 @@ import {pathToFileURL} from 'node:url'
 import {repositoryRoot} from './module-keygen.mjs'
 import {readSigningKey, signModule, validateManifest, writeModule} from './package-module.mjs'
 
-const moduleNames = ['hq','notes','tasks','chat']
+const moduleNames = ['hq','notes','tasks','chat','code']
 const globals = {
   react:'__zqRuntime.React',
   'react-dom':'__zqRuntime.ReactDOM',
@@ -57,7 +57,7 @@ function moduleBoundary(directory) {
 }
 
 export async function buildModules({root = repositoryRoot, names = moduleNames, version, out, signingKeyPath} = {}) {
-  if (!names.length || new Set(names).size !== names.length || names.some(name => !moduleNames.includes(name))) throw new Error('Select hq, notes, tasks or chat')
+  if (!names.length || new Set(names).size !== names.length || names.some(name => !moduleNames.includes(name))) throw new Error('Select hq, notes, tasks, chat or code')
   if (version && names.length !== 1) throw new Error('--version requires a single module')
   if (out?.endsWith('.zqmodule') && names.length !== 1) throw new Error('A .zqmodule --out requires a single module')
   const key = await readSigningKey(signingKeyPath || process.env.ZQ_MODULE_SIGNING_KEY || path.join(root, '.local-data/module-signing/private.pem'))

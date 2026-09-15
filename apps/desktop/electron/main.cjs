@@ -11,7 +11,7 @@ const { CloseRequests } = require('./close-requests.cjs');
 const closeRequests = new CloseRequests();
 app.setName('zQ');
 if (process.env.ZQ_DATA_DIR) app.setPath('userData', path.resolve(process.env.ZQ_DATA_DIR));
-let window, workspace, files, chat, voice, connectors, attachments, chatError, connectorError, quitting = false, closeTimer;
+let window, workspace, files, code, codeFactory, codeError, chat, voice, connectors, attachments, chatError, connectorError, quitting = false, closeTimer;
 const index = path.resolve(__dirname, '../dist/index.html');
 const allowedURL = pathToFileURL(index).href;
 const runtimeCheck = process.argv.includes('--runtime-check');
@@ -35,6 +35,7 @@ async function closeFailed(id, message) {
  else { quitting = false; chat?.resumeAfterWindowClose(); closeRequests.cancel(id); window?.webContents.send('window:close-cancelled', id); }
 }
 function createWindow() {
+ if(!code&&codeFactory){try{code=codeFactory();codeError=null}catch(error){codeError=error}}
  chat?.resumeAfterWindowClose();
  window = new BrowserWindow({ width: 1380, height: 900, minWidth: 840, minHeight: 640, title: 'zQ', backgroundColor: '#ffffff', show: false,
   ...(process.platform==='darwin'?{titleBarStyle:'hidden',trafficLightPosition:{x:18,y:24}}:{}),
@@ -50,8 +51,8 @@ function createWindow() {
   window.webContents.send('window:close-request', id);
   closeTimer = setTimeout(() => closeFailed(id, 'The editor did not respond. Keep zQ open to retry saving.'), 10000);
  });
- window.on('closed', () => { window = null; clearTimeout(closeTimer); closeRequests.reset(); });
- window.webContents.on('render-process-gone', () => { closeRequests.reset(); voice?.close(); chat?.stopAll('interrupted','The app window closed unexpectedly.'); });
+ window.on('closed', () => { code?.close(); code=null; window = null; clearTimeout(closeTimer); closeRequests.reset(); });
+ window.webContents.on('render-process-gone', () => { code?.close(); code=null; closeRequests.reset(); voice?.close(); chat?.stopAll('interrupted','The app window closed unexpectedly.'); });
  window.loadFile(index);
  void connectors?.restoreConnections().catch(()=>{});
 }
@@ -68,8 +69,12 @@ app.whenReady().then(async () => {
  const clipboardService=require('./clipboard.cjs').createClipboardService(clipboard);
  handle('clipboard:writeText',text=>clipboardService.writeText(text));
  const directory = app.getPath('userData');
+ const sendCode=(channel,value)=>{if(window&&!window.isDestroyed())window.webContents.send(channel,value)};
+ codeFactory=()=>new (require('./code/code-service.cjs').CodeService)({directory:path.join(directory,'code'),onChange:value=>sendCode('code:changed',value),onTerminal:value=>sendCode('code:terminal',value),pickDirectory:async()=>{const selected=await dialog.showOpenDialog(window,{title:'Choose Code project folder',properties:['openDirectory','createDirectory']});return selected.canceled?null:selected.filePaths[0]},openExternal:url=>shell.openExternal(url),reveal:folder=>shell.openPath(folder)});
+ try{code=codeFactory()}catch(error){codeError=error}
+ handle('code:invoke',(method,input)=>{if(!code)throw codeError;return code.invoke(method,input)});
  const bundled=path.resolve(__dirname,'../bundled-modules');
- const moduleStore=new ModuleStore({directory:path.join(directory,'modules'),bundles:['hq','notes','tasks','chat'].map(name=>JSON.parse(fs.readFileSync(path.join(bundled,`${name}.zqmodule`),'utf8'))),trustedKeys:JSON.parse(fs.readFileSync(path.join(bundled,'trusted-keys.json'),'utf8')),apiVersion:1});
+ const moduleStore=new ModuleStore({directory:path.join(directory,'modules'),bundles:['hq','notes','tasks','chat','code'].map(name=>JSON.parse(fs.readFileSync(path.join(bundled,`${name}.zqmodule`),'utf8'))),trustedKeys:JSON.parse(fs.readFileSync(path.join(bundled,'trusted-keys.json'),'utf8')),apiVersion:1});
  handle('modules:runtime',()=>moduleStore.getRuntime());
  handle('modules:list',()=>moduleStore.list());
  handle('modules:install',async()=>{const selected=await dialog.showOpenDialog(window,{title:'Install module update',properties:['openFile'],filters:[{name:'zQ module',extensions:['zqmodule']}]});if(selected.canceled)return null;return moduleStore.installFile(selected.filePaths[0])});

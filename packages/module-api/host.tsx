@@ -19,7 +19,7 @@ export type Host = {
  registerFlush:(id:string,flush:()=>Promise<void>)=>()=>void;
  closing:boolean;saveStatus:string;initialFiles:FileDocument[];
  onFilesChange:(files:FileDocument[])=>void;onFileFlush:(flush:()=>Promise<void>)=>void;flushWorkspace:()=>Promise<void>;
- services:Pick<DesktopBridge,'chat'|'connectors'|'attachments'|'files'|'voice'|'artifacts'|'clipboard'>;
+ services:Pick<DesktopBridge,'code'|'chat'|'connectors'|'attachments'|'files'|'voice'|'artifacts'|'clipboard'>;
  openSettings?:(section:SettingsSection)=>void;
  commands:CommandBus;navigate:(view:View)=>void;notify:(message:string)=>void;
  focusMode:boolean;setFocusMode:Dispatch<SetStateAction<boolean>>;

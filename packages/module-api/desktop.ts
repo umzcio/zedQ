@@ -1,3 +1,4 @@
+import type {CodeBridge} from './code-types'
 import type {ConnectorBridge} from './connector-types'
 import type {ArtifactBridge} from './artifact-types'
 import type {VoiceBridge} from './voice-types'
@@ -12,6 +13,7 @@ export type FileDocument = {id:string;path:string;name:string;body:string;savedB
 export type Result<T> = {ok:true;value:T}|{ok:false;error:{code:string;message:string}}
 export type DesktopBridge = {
  platform:string;
+ code:CodeBridge;
  clipboard:{writeText:(text:string)=>Promise<Result<null>>};
  modules:{runtime:()=>Promise<Result<ModuleRuntime[]>>;list:()=>Promise<Result<ModuleStatus[]>>;install:()=>Promise<Result<ModuleStatus|null>>;download:(url:string)=>Promise<Result<ModuleStatus>>;rollback:(id:string)=>Promise<Result<ModuleStatus>>;recover:(id:string,version:string)=>Promise<Result<ModuleRuntime>>};
  attachments:AttachmentBridge;

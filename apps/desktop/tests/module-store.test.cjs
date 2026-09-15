@@ -280,3 +280,16 @@ test('rejects both advertised and streamed oversized downloads plus invalid JSON
 test('times out the complete download including a stalled body', async () => {
   await assert.rejects(() => downloadPackage('https://modules.example/chat', { timeoutMs: 10, fetch: async () => new Response(new ReadableStream({ start() {} })) }), /timed out/i);
 });
+
+
+test('Code is a signed fifth module and cannot be installed into a shell without its native capability', t => {
+  const {options}=fixture(t);
+  const code=signed({id:'zq.code',version:'1.0.0',apiVersion:1,title:'Code',view:'Code',icon:'code',capabilities:['code.v1']});
+  const old=new ModuleStore(options);
+  assert.throws(()=>old.install(code), /identity|capabilities/);
+  const store=new ModuleStore({...options,bundles:[...bundles,code]});
+  assert.equal(store.list().find(row=>row.id==='zq.code').version,'1.0.0');
+  const next=signed({...code.manifest,version:'1.0.1'});
+  assert.equal(store.install(next).pendingVersion,'1.0.1');
+  assert.throws(()=>new ModuleStore({...options,bundles:[...bundles.slice(0,3),code]}),/required/);
+});

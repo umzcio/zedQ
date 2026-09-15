@@ -10,7 +10,7 @@ const prerelease = `(?:${numeric}|[0-9]*[A-Za-z-][0-9A-Za-z-]*)`
 const semver = new RegExp(`^${numeric}\\.${numeric}\\.${numeric}(?:-${prerelease}(?:\\.${prerelease})*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$`)
 export function validateManifest(manifest) {
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) throw new Error('Invalid module manifest')
-  if (!['zq.hq','zq.notes','zq.tasks','zq.chat'].includes(manifest.id)) throw new Error('Unknown first-party module id')
+  if (!['zq.hq','zq.notes','zq.tasks','zq.chat','zq.code'].includes(manifest.id)) throw new Error('Unknown first-party module id')
   if (typeof manifest.version !== 'string' || !semver.test(manifest.version)) throw new Error('Module version must be semantic version (for example 1.0.1)')
   if (manifest.apiVersion !== 1) throw new Error('Unsupported module apiVersion')
   for (const field of ['title','view','icon']) if (typeof manifest[field] !== 'string' || !manifest[field].trim()) throw new Error(`Missing manifest ${field}`)

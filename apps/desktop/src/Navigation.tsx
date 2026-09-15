@@ -10,7 +10,7 @@ function HeaderAction({label,onClick,selected=false,children}:{label:string;onCl
 
 type Props={settingsSection:SettingsSection;onSettingsSection:(section:SettingsSection)=>void;modules:ModuleManifest[];commands:CommandBus;view:View;theme:WorkspaceState['theme'];collapsed:boolean;disabled:boolean;navigate:(view:View)=>void;setTheme:(theme:WorkspaceState['theme'])=>void;search:()=>void;toggleSidebar:()=>void;sidebarRef:Ref<HTMLDivElement>}
 export default function Navigation(p:Props){
- const icons={home:House,notes:NotePencil,tasks:Kanban,chat:ChatCircle}
+ const icons={home:House,notes:NotePencil,tasks:Kanban,chat:ChatCircle,code:TerminalWindow}
  const modules=p.modules.filter(m=>m.view!=='HQ').map(m=>({name:m.view,icon:icons[m.icon]}))
  return <IconContext.Provider value={{weight:'light'}}>
   <header className="workspace-header" inert={p.disabled}>
