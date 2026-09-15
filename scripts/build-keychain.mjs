@@ -1,12 +1,12 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { access, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-// Build once per source/compiler/architecture/signing-identity change. Keeping
-// an unchanged helper avoids unnecessary ad-hoc identity changes and prompts.
+// Reuse the exact signed bytes for unchanged source/target/signing identity.
+// Compiler upgrades and isolated worktrees must not invalidate Keychain trust.
 // Release builds should set ZQ_KEYCHAIN_SIGN_IDENTITY to a stable certificate
 // and preserve dev.zedq.desktop.provider-keychain when signing nested code.
 if (process.platform !== 'darwin') {
@@ -34,16 +34,43 @@ function run(command, args) {
   return result.stdout
 }
 
-const compiler = run('/usr/bin/xcrun', ['swiftc', '--version'])
-const hash = createHash('sha256').update(await readFile(source)).update(await readFile(fileURLToPath(import.meta.url))).update(compiler).update(target).update(identity).digest('hex')
+// Worktrees share this cache with their primary checkout. It contains only
+// the public executable and its integrity receipt, never credentials or keys.
+let cacheRoot = root
 try {
-  if ((await readFile(stamp, 'utf8')).trim() === hash) {
-    await access(output)
-    run('/usr/bin/codesign', ['--verify', '--strict', output])
-    console.log('Keychain helper is up to date.')
-    process.exit(0)
-  }
-} catch { /* Missing, changed, or invalid builds are replaced atomically. */ }
+  const gitFile = await readFile(path.join(root, '.git'), 'utf8')
+  const gitDir = path.resolve(root, gitFile.trim().replace(/^gitdir: /, ''))
+  const common = (await readFile(path.join(gitDir, 'commondir'), 'utf8')).trim()
+  cacheRoot = path.dirname(path.resolve(gitDir, common))
+} catch { /* A regular checkout (or source archive) uses its own cache. */ }
+const hash = createHash('sha256').update(await readFile(source)).update(target).update(identity).digest('hex')
+const cache = path.join(cacheRoot, '.local-data/native-keychain', hash)
+const cachedBinary = path.join(cache, 'provider-keychain')
+const receiptPath = path.join(cache, 'receipt.json')
+const digest = bytes => createHash('sha256').update(bytes).digest('hex')
+async function publish(binary) {
+  await mkdir(outputDirectory, { recursive: true })
+  const temporary = `${output}.tmp-${process.pid}`
+  try {
+    await copyFile(binary, temporary)
+    await chmod(temporary, 0o755)
+    await rename(temporary, output)
+    await writeFile(stamp, `${hash}\n`)
+  } finally { await rm(temporary, { force: true }) }
+}
+let receipt
+try { receipt = JSON.parse(await readFile(receiptPath, 'utf8')) }
+catch (error) { if (error.code !== 'ENOENT') throw error }
+if (receipt && process.env.ZQ_KEYCHAIN_FORCE_REBUILD !== '1') {
+  const bytes = await readFile(cachedBinary)
+  if (receipt.inputHash !== hash || receipt.binaryHash !== digest(bytes))
+    throw new Error('Cached Keychain helper failed integrity verification; refusing to replace its trusted identity.')
+  run('/usr/bin/codesign', ['--verify', '--strict', cachedBinary])
+  await publish(cachedBinary)
+  console.log('Reused the existing signed Keychain helper (identity preserved).')
+  process.exit(0)
+}
+const compiler = run('/usr/bin/xcrun', ['swiftc', '--version'])
 
 await mkdir(outputDirectory, { recursive: true })
 const temporary = await mkdtemp(path.join(tmpdir(), 'zq-keychain-build-'))
@@ -52,8 +79,10 @@ try {
   run('/usr/bin/xcrun', ['swiftc', source, '-O', '-target', target, '-framework', 'Security', '-module-cache-path', path.join(temporary, 'module-cache'), '-o', binary])
   run('/usr/bin/codesign', ['--force', '--sign', identity, '--identifier', 'dev.zedq.desktop.provider-keychain', '--options', 'runtime', ...(identity === '-' ? [] : ['--timestamp']), binary])
   run('/usr/bin/codesign', ['--verify', '--strict', binary])
-  await rename(binary, output)
-  await writeFile(stamp, `${hash}\n`)
+  await mkdir(cache, { recursive: true, mode: 0o700 })
+  await copyFile(binary, cachedBinary)
+  await writeFile(receiptPath, JSON.stringify({ inputHash: hash, binaryHash: digest(await readFile(binary)), compiler }), { mode: 0o600 })
+  await publish(cachedBinary)
   console.log(`Built macOS Keychain helper (${architecture}).`)
   if (identity === '-') console.log('Ad-hoc signing: source changes may require Keychain authorization again. Use ZQ_KEYCHAIN_SIGN_IDENTITY for stable signed releases.')
 } finally {
