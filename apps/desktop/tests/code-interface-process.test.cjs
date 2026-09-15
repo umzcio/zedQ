@@ -154,6 +154,7 @@ test('real PTY streams ANSI and closing client detaches owned terminal', async (
     mode: 'terminal'
   })
   assert.equal(s.state, 'ready')
+  assert.equal(execFileSync(tmux, ['-S', path.join(h.root, 'tmux'), 'show-options', '-v', '-t', 'zqc-' + s.id, 'status'], { encoding: 'utf8' }).trim(), 'off')
   await a.invoke('attachTerminal', { id: s.id, cols: 90, rows: 25 })
   await until(() => output.includes('terminal:'))
   assert.ok(output.includes('\x1b['))
