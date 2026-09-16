@@ -461,7 +461,8 @@ test('failed Terminal to Chat target cannot bypass durable native ownership usin
  const s=await a.invoke('createSession',{projectId:p.id,profileId:profile.id,mode:'terminal'})
  const switching=a.invoke('switchSession',{id:s.id,expectedRevision:0,profileId:profile.id,mode:'chat'})
  let target
- await until(()=>{try{const controller=JSON.parse(fs.readFileSync(path.join(h.root,s.id+'.controller.json'))),ownership=JSON.parse(fs.readFileSync(path.join(h.root,s.id+'.ownership.json')));if(controller.mode==='chat'&&ownership.state==='running'){target={controller,ownership};return true}}catch{}})
+ // Wait for the native fixture, not just its shell bootstrap, before crashing the runner.
+ await until(()=>{try{const controller=JSON.parse(fs.readFileSync(path.join(h.root,s.id+'.controller.json'))),ownership=JSON.parse(fs.readFileSync(path.join(h.root,s.id+'.ownership.json')));if(controller.mode==='chat'&&ownership.state==='running'&&fs.existsSync(controller.receipt)){target={controller,ownership};return true}}catch{}})
  t.after(()=>{try{process.kill(-target.ownership.pid,'SIGKILL')}catch{}})
  process.kill(target.controller.pid,'SIGKILL')
  const failed=await switching

@@ -11,13 +11,13 @@ test('resumes the exact conversation through the selected launcher', () => {
   const launch = buildClaudeResume({profile, session, mode:'terminal'})
   assert.equal(launch.file, '/bin/zsh')
   assert.equal(launch.cwd, session.cwd)
-  assert.deepEqual(launch.args.slice(3), [profile.launcherFile, 'claude-team', '--resume', nativeId])
+  assert.deepEqual(launch.args.slice(3), [session.cwd, profile.launcherFile, 'claude-team', '--resume', nativeId])
   assert.ok(!launch.args[1].includes(profile.launcherFile))
   assert.equal(launch.env, undefined)
 })
 test('chat uses the same native identity and structured input/output', () => {
   const launch = buildClaudeResume({profile, session, mode:'chat'})
-  assert.deepEqual(launch.args.slice(5), ['--resume',nativeId,'-p','--input-format','stream-json',
+  assert.deepEqual(launch.args.slice(6), ['--resume',nativeId,'-p','--input-format','stream-json',
     '--output-format','stream-json','--verbose','--include-partial-messages'])
 })
 for (const [name, change, code] of [

@@ -14,6 +14,8 @@ Connect copies the shipped JavaScript service bundle to an immutable content-add
 
 Host-local launcher files/functions are explicitly configured on each host. The `terminal` profile adapter runs exactly that launcher with no injected Claude arguments. Generic or external terminals have no verified native conversation and cannot switch to Chat, switch profiles, or resume a stopped process. Existing external tmux sessions are discovered on the host's default tmux server. Their exact tmux session ID and server/creation identity are retained; an already attached session is not seized. Native identity adoption from an external Claude terminal is deliberately unavailable without independent validation.
 
+Chat, Terminal and native setup start through an interactive login zsh, loading the user's normal startup configuration before sourcing the selected launcher. Startup output is routed to stderr so it cannot corrupt Chat's JSON stream; the runner discards that diagnostic stream. The selected project directory is restored after startup files run. PATH, exported settings and the launcher's account/config-directory selection remain native; zQ neither copies credentials nor substitutes another account when the selected profile is signed out.
+
 ## Native profile setup
 
 `createSetupSession` opens an explicitly requested, owned terminal for the selected profile's launcher with no injected Claude or resume arguments. It lets the user complete the CLI's own folder-trust or login flow. The session records `adapter: terminal` and `purpose: profile-setup`; it has no native conversation identity and cannot switch interfaces/profiles or resume after Stop. No profile clone, automatic trust decision, permission bypass, or authentication action is performed.

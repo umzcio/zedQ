@@ -49,7 +49,7 @@ test('preview forwarding binds loopback, owns only its child and records process
 })
 test('generic adapter passes launcher verbatim without Claude identity or structured flags',()=>{
  const launch=buildTerminalLaunch({profile:{hostId:'local',adapter:'terminal',modes:['terminal'],launcherFile:'/tmp/a b.zsh',functionName:'local-model'},session:{hostId:'local',cwd:'/tmp'},mode:'terminal'})
- assert.deepEqual(launch.args.slice(3),['/tmp/a b.zsh','local-model']);assert.ok(!launch.args.includes('--resume'))
+ assert.deepEqual(launch.args.slice(3),['/tmp','/tmp/a b.zsh','local-model']);assert.ok(!launch.args.includes('--resume'))
  assert.throws(()=>buildTerminalLaunch({profile:{adapter:'terminal'},mode:'chat'}),{code:'MODE_UNSUPPORTED'})
 })
 test('SSH stream decoder preserves multibyte JSON split across arbitrary transport chunks',async()=>{

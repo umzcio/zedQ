@@ -1,4 +1,5 @@
 const path = require('node:path')
+const { buildProfileLaunch } = require('./profile-launch.cjs')
 
 /** @typedef {'chat'|'terminal'} Mode */
 /** @typedef {{id:string, hostId:string, launcherFile:string, functionName:string, modes:Mode[]}} Profile */
@@ -31,8 +32,7 @@ function buildClaudeResume({profile, session, mode} = {}) {
     '--verbose','--include-partial-messages')
   // Values are positional arguments, never executable shell source. The trusted
   // launcher may configure its own environment; no global environment is changed.
-  return {file:'/bin/zsh', args:['-c','source "$1" || exit $?; shift; "$@"','zq-code',
-    profile.launcherFile,profile.functionName,...args], cwd:session.cwd}
+  return buildProfileLaunch(profile, session.cwd, args)
 }
 
 const validModel = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:/\[\]-]{0,199}$/.test(value)
