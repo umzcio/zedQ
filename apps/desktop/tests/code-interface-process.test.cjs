@@ -514,3 +514,20 @@ test('empty Chat switches interfaces and models before a transcript exists, then
  const fourth=await a.invoke('switchSession',{id:third.id,expectedRevision:third.revision,profileId:profile.id,mode:'terminal'});
  assert.equal(fourth.state,'ready');assert.equal(fourth.model,'haiku');assert.equal(fourth.nativeId,first.nativeId);
 });
+
+test('Stop reacquires a released selection lease and preserves another window ownership',async t=>{
+ const h=setup(t),a=h.service(),b=h.service();
+ const project=await a.invoke('createProject',{name:'Work',cwd:h.root});
+ fs.appendFileSync(h.launch,'lease-fixture() { exec /bin/cat; }\n');
+ const profile=await a.invoke('createProfile',{name:'Terminal',launcherFile:h.launch,functionName:'lease-fixture',adapter:'terminal'});
+ const s=await a.invoke('createSession',{projectId:project.id,profileId:profile.id,mode:'terminal'});
+ await assert.rejects(b.invoke('stopSession',{id:s.id,expectedRevision:s.revision}),{code:'LEASE_HELD'});
+ assert.equal((await a.invoke('snapshot')).sessions.find(r=>r.id===s.id).state,'ready');
+ await a.invoke('releaseSession',{id:s.id});
+ const stopped=await b.invoke('stopSession',{id:s.id,expectedRevision:s.revision});
+ assert.equal(stopped.state,'stopped');
+ const again=await a.invoke('createSession',{projectId:project.id,profileId:profile.id,mode:'terminal'});
+ execFileSync(tmux,['-S',path.join(h.root,'tmux'),'kill-session','-t','=zq-service']);
+ await until(async()=>{try{return (await a.invoke('snapshot')).sessions.some(r=>r.id===again.id)}catch{return false}});
+ assert.equal((await a.invoke('stopSession',{id:again.id,expectedRevision:again.revision})).state,'stopped');
+})

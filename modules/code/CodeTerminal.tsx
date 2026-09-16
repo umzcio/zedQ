@@ -14,13 +14,12 @@ import {
 import { X, ArrowDown, ArrowUp, Plug } from "@phosphor-icons/react";
 import { useHost, type CodeSession } from "@zq/module-api";
 import "@xterm/xterm/css/xterm.css";
+import { codeError } from "./errors";
 
 export function CodeTerminal({
   session,
-  onError,
 }: {
   session: CodeSession;
-  onError: (message: string) => void;
 }) {
   const host = useHost(),
     bridge = host.services.code,
@@ -29,13 +28,14 @@ export function CodeTerminal({
     search = useRef<SearchAddon | null>(null),
     attachment = useRef<string | null>(null);
   const [query, setQuery] = useState(""),
+    [error, setError] = useState(""),
     [finding, setFinding] = useState(false),
     [attached, setAttached] = useState(false),
     [generation, setGeneration] = useState(0);
-  const errors = useRef(onError);
-  errors.current = onError;
+  const active = !["switching", "stopped", "recoverable", "error", "disconnected"].includes(session.state);
   useEffect(() => {
-    if (!element.current) return;
+    if (!element.current || !active) return;
+    setError("");
     const attachmentId = crypto.randomUUID();
     attachment.current = attachmentId;
     let disposed = false,
@@ -71,8 +71,11 @@ export function CodeTerminal({
     search.current = finder;
     fit.fit();
     const fail = (error: unknown) => {
-      if (!disposed)
-        errors.current(error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      if (disposed || message === "ATTACHMENT_SUPERSEDED") return;
+      connected = false;
+      setAttached(false);
+      setError(codeError(error));
     };
     const stop = bridge.onTerminal((chunk) => {
       if (
@@ -163,7 +166,7 @@ export function CodeTerminal({
         .invoke("detachTerminal", { id: session.id, attachmentId })
         .catch(() => {});
     };
-  }, [bridge, session.id, generation]);
+  }, [bridge, session.id, generation, active]);
   const copy = () => {
     const text = terminal.current?.getSelection();
     if (text) void host.services.clipboard.writeText(text);
@@ -173,7 +176,7 @@ export function CodeTerminal({
       const text = await navigator.clipboard.readText();
       terminal.current?.paste(text);
     } catch {
-      onError("Use ⌘V to paste into the terminal.");
+      setError("Use ⌘V to paste into the terminal.");
     }
   };
   return (
@@ -236,16 +239,16 @@ export function CodeTerminal({
                   attachmentId: attachment.current || undefined,
                 })
                 .then(() => setAttached(false))
-                .catch((error) => onError(error.message))
+                .catch((error) => setError(codeError(error)))
             }
           >
             Detach
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
-      {!attached && (
+      {!attached && active && (
         <div className="code-terminal-reconnect">
-          <span>Terminal detached</span>
+          <span role={error ? "alert" : undefined}>{error || "Terminal detached"}</span>
           <button onClick={() => setGeneration((n) => n + 1)}>
             <Plug size={14} />
             Reconnect

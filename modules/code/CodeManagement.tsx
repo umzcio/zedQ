@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { codeError } from "./errors";
 import {
   Button,
   Input,
@@ -305,7 +306,7 @@ function ConfirmForm({
   return (
     <>
       <p role="alert" className="code-form-error">
-        {error}
+        {codeError(error)}
       </p>
       <div className="code-actions">
         <Button variant="ghost" onClick={onClose} disabled={busy}>
@@ -361,7 +362,7 @@ function RenameForm({
         maxLength={160}
       />
       <p role="alert" className="code-form-error">
-        {error}
+        {codeError(error)}
       </p>
       <div className="code-actions">
         <Button type="button" variant="ghost" onClick={onClose}>
@@ -600,7 +601,7 @@ function EditForm({
         </>
       )}
       <p role="alert" className="code-form-error">
-        {error}
+        {codeError(error)}
       </p>
       <div className="code-actions">
         <Button type="button" variant="ghost" onClick={onClose}>

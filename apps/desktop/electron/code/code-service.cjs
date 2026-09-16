@@ -145,6 +145,21 @@ class CodeService {
     }
   }
   async request(method, input = {}) {
+    try { return await this.requestOnce(method, input) }
+    catch (error) {
+      // The service drops socket leases on reconnect, while the selected UI can
+      // stay mounted. LEASE_REQUIRED is raised before any action takes effect.
+      // Reclaim only for explicit control actions, and never steal another owner
+      // or replay an action after an ambiguous disconnect/timeout.
+      if (error.code !== 'LEASE_REQUIRED' || ![
+        'stopSession', 'resumeSession', 'switchSession', 'sendMessage',
+        'interruptSession', 'respondPermission', 'attachTerminal'
+      ].includes(method)) throw error
+      await this.requestOnce('claimSession', { id: input.id })
+      return this.requestOnce(method, input)
+    }
+  }
+  async requestOnce(method, input = {}) {
     const snapshot = this.lastSnapshot || await this.snapshot()
     const row = [...snapshot.projects, ...snapshot.profiles, ...snapshot.sessions].find(r => r.id === (input.projectId || input.id))
     const hostId = input.hostId || row?.hostId || 'local'
@@ -371,9 +386,9 @@ class CodeService {
         return session
       }
     }
+    const result = await this.request(method, input)
     if (['stopSession', 'switchSession', 'releaseSession'].includes(method))
       this.detach(input?.id)
-    const result = await this.request(method, input)
     if (!['events', 'claimSession', 'releaseSession'].includes(method))
       await this.refresh()
     return result

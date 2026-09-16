@@ -256,6 +256,8 @@
   position: relative;
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  padding: 14px 12px 7px;
   background: var(--code-terminal-bg);
   display: flex;
   flex-direction: column;
@@ -263,8 +265,7 @@
 .code-terminal {
   flex: 1;
   min-height: 0;
-  padding: 14px 12px 7px;
-  height: 100%;
+  min-width: 0;
   overflow: hidden;
 }
 .code-terminal .xterm {

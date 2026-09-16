@@ -112,3 +112,35 @@ test('native folder trust is surfaced before a terminal handoff can silently tim
  host.tmux.capture=async()=> 'Quick safety check: Is this a project you created or one you trust?\nYes, I trust this folder';
  await assert.rejects(host.ready({id:'trust',mode:'terminal',receipt:path.join(root,'not-yet-written'),expected:'native',cwd:root}),{code:'PROJECT_TRUST_REQUIRED'});
 });
+
+test('control actions reclaim a lost lease once, without replaying ambiguous errors or stealing another owner',async t=>{
+ const {CodeService}=require('../electron/code/code-service.cjs'),root=fs.mkdtempSync('/tmp/zq-lease-');
+ const service=new CodeService({directory:root,tmuxPath:null,pty:{}});
+ t.after(()=>{service.close();fs.rmSync(root,{recursive:true,force:true})});
+ for(const method of ['stopSession','resumeSession','switchSession','sendMessage','interruptSession','respondPermission','attachTerminal']) {
+  const calls=[]; let owned=false;
+  service.requestOnce=async(name,input)=>{calls.push([name,input]);if(name==='claimSession'){owned=true;return {ok:true}}if(!owned)throw Object.assign(new Error('LEASE_REQUIRED'),{code:'LEASE_REQUIRED'});return {ok:true}};
+  const input={id:'session',expectedRevision:3};assert.deepEqual(await service.request(method,input),{ok:true});
+  assert.deepEqual(calls,[[method,input],['claimSession',{id:'session'}],[method,input]]);
+ }
+ for(const code of ['SERVICE_DISCONNECTED','SERVICE_REQUEST_TIMEOUT','STALE_REVISION','LEASE_HELD']) {
+  let calls=0;service.requestOnce=async()=>{calls++;throw Object.assign(new Error(code),{code})};
+  await assert.rejects(service.request('stopSession',{id:'session'}),{code});assert.equal(calls,1);
+ }
+ let calls=[];service.requestOnce=async name=>{calls.push(name);const code=name==='claimSession'?'LEASE_HELD':'LEASE_REQUIRED';throw Object.assign(new Error(code),{code})};
+ await assert.rejects(service.request('stopSession',{id:'session'}),{code:'LEASE_HELD'});
+ assert.deepEqual(calls,['stopSession','claimSession']);
+ calls=[];service.requestOnce=async name=>{calls.push(name);throw Object.assign(new Error('LEASE_REQUIRED'),{code:'LEASE_REQUIRED'})};
+ await assert.rejects(service.request('writeTerminal',{id:'session',data:'x'}),{code:'LEASE_REQUIRED'});assert.deepEqual(calls,['writeTerminal']);
+})
+
+test('a rejected Stop leaves the terminal attached',async t=>{
+ const {CodeService}=require('../electron/code/code-service.cjs'),root=fs.mkdtempSync('/tmp/zq-stop-');
+ const service=new CodeService({directory:root,tmuxPath:null,pty:{}});
+ t.after(()=>{service.close();fs.rmSync(root,{recursive:true,force:true})});
+ service.snapshot=async()=>({sessions:[{id:'session',ownership:'owned'}]});
+ let killed=0;service.terminals.set('session',{kill(){killed++}});
+ service.request=async()=>{throw Object.assign(new Error('LEASE_HELD'),{code:'LEASE_HELD'})};
+ await assert.rejects(service.invoke('stopSession',{id:'session',expectedRevision:0}),{code:'LEASE_HELD'});
+ assert.equal(killed,0);assert.ok(service.terminals.has('session'));
+})

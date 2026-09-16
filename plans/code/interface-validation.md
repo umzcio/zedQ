@@ -28,3 +28,9 @@ Read-only checks in the regular workspace confirmed branch, remotes and commit h
 ## Shell configuration follow-up
 
 All profile launch paths now load interactive login zsh startup files before invoking the configured launcher. An isolated integration test verifies startup environment/PATH inheritance, shared config symlinks, literal arguments and project paths, and separation of startup banners from Chat protocol output. The Code suite passed 97/97; the desktop build and ARM64 package passed. The running setup terminal retained its process across the app/service update. Read-only native account checks reported Team and CIO signed out in the normal shell too, while default Claude and Gmail were signed in; no account credentials were changed or substituted.
+
+## Session control and terminal layout follow-up
+
+The Code suite passed 101/101. A focused follow-up also verified Stop after an actual background-service restart without an explicit UI re-claim. Explicit control actions recover only from `LEASE_REQUIRED`, which occurs before mutation; another window's ownership, revision errors and ambiguous disconnect/timeout outcomes remain blocked. Rejected Stop actions retain the terminal attachment.
+
+An isolated Electron interface run exercised Chat → Terminal → Chat → Terminal, deliberately released the selection lease, and completed Stop through its confirmation dialog. Terminal screen bounds remained inside the available area at 1440×900, 1100×700 and 1800×1000, and a marker on the last terminal row was visible. Switching no longer attaches a replacement terminal during the intermediate state, and terminal attachment errors stay local instead of replacing handoff-dialog errors. All fixture projects and sessions were confined to a separate data directory.

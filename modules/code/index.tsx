@@ -521,7 +521,6 @@ function CodeRoot() {
                         <CodeTerminal
                           key={`${session.id}-${session.revision}`}
                           session={session}
-                          onError={setError}
                         />
                       ) : (
                         <CodeChat
