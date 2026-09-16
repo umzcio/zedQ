@@ -18,22 +18,23 @@ test('Chat, Terminal and setup inherit login shell configuration without contami
   const config = path.join(root, 'shared-config')
   fs.mkdirSync(config); fs.symlinkSync(config, path.join(root, 'profile-config'))
   const reader = path.join(root, 'reader.cjs')
-  fs.writeFileSync(reader, `process.stdout.write(JSON.stringify({args:process.argv.slice(2),cwd:process.cwd(),login:process.env.ZQ_TEST_LOGIN,interactive:process.env.ZQ_TEST_INTERACTIVE,last:process.env.ZQ_TEST_LAST,config:require('fs').realpathSync(process.env.CLAUDE_CONFIG_DIR)}))`)
+  fs.writeFileSync(reader, `process.stdout.write(JSON.stringify({args:process.argv.slice(2),cwd:process.cwd(),login:process.env.ZQ_TEST_LOGIN,interactive:process.env.ZQ_TEST_INTERACTIVE,last:process.env.ZQ_TEST_LAST,config:process.env.CLAUDE_CONFIG_DIR ? require('fs').realpathSync(process.env.CLAUDE_CONFIG_DIR) : null}))`)
   fs.writeFileSync(path.join(bin, 'fixture-agent'), '#!/bin/sh\nexec "$ZQ_TEST_NODE" "$ZQ_TEST_READER" "$@"\n', {mode:0o700})
+  fs.copyFileSync(path.join(bin, 'fixture-agent'), path.join(bin, 'claude'))
   const launcherFile = path.join(root, `profiles ' $(touch BAD).zsh`)
   fs.writeFileSync(launcherFile, 'print launcher-banner\nfixture-profile() { CLAUDE_CONFIG_DIR="$ZDOTDIR/profile-config" command fixture-agent "$@"; }\n')
   const profile = {id:'p',hostId:'local',launcherFile,functionName:'fixture-profile',modes:['chat','terminal']}
   const session = {id:'s',hostId:'local',cwd:work,nativeId:'4dab1c34-d7d7-4e77-8a6c-42d1bb5b8c59'}
-  for (const mode of ['chat','terminal','setup']) {
+  for (const mode of ['chat','terminal','setup','plain-claude']) {
     const launch = mode === 'setup'
       ? buildTerminalLaunch({profile:{...profile,adapter:'terminal'},session,mode:'terminal'})
-      : buildClaudeResume({profile,session,mode})
+      : buildClaudeResume({profile:mode === 'plain-claude' ? {...profile,launcherFile:'/dev/null',functionName:'claude'} : profile,session,mode:mode === 'plain-claude' ? 'terminal' : mode})
     const output = execFileSync(launch.file,launch.args,{cwd:work,encoding:'utf8',stdio:['pipe','pipe','pipe'],
-      env:{...process.env,ZDOTDIR:root,ZQ_TEST_NODE:process.execPath,ZQ_TEST_READER:reader}})
+      env:{...process.env,CLAUDE_CONFIG_DIR:undefined,ZDOTDIR:root,ZQ_TEST_NODE:process.execPath,ZQ_TEST_READER:reader}})
     const result = JSON.parse(output)
     assert.equal(result.cwd, work)
     assert.equal(result.login, 'loaded'); assert.equal(result.interactive, 'loaded'); assert.equal(result.last, 'loaded')
-    assert.equal(result.config, config)
+    assert.equal(result.config, mode === 'plain-claude' ? null : config)
     assert.equal(result.args.includes(session.nativeId), mode !== 'setup')
     assert.equal(result.args.includes('stream-json'), mode === 'chat')
     assert.equal(fs.existsSync(path.join(root,'BAD')), false)

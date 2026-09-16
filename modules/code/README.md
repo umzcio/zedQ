@@ -4,6 +4,7 @@ The signed Code module provides coding sessions beside the existing zQ modules. 
 
 - Projects group persistent sessions by folder and execution host.
 - Claude profiles use existing host-local shell functions and native conversation history. Explicit profile and Chat/Terminal handoffs resume the exact native conversation after confirming the previous controller stopped.
+- Plain `claude` is included alongside named account profiles. It uses the normal shell command and native default account/configuration without an account-specific override. Existing catalogs gain this entry once; later deletion or renaming is preserved.
 - Other CLI launchers use Terminal only. External tmux attachment never takes ownership of the external process.
 - Files supports bounded text editing with conflict detection. Changes shows staged, unstaged and untracked diffs. Preview embeds localhost development servers and forwards remote ports through SSH.
 - Closing zQ detaches from owned sessions. Stop is an explicit action; archiving preserves the process, checkout and native history.

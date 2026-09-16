@@ -45,7 +45,7 @@ test('private durable catalog validates CRUD and never records launcher contents
   )
   const again = new CodeCatalog(root, { seedFile: '/absent' })
   assert.equal(again.value.projects[0].id, p.id)
-  assert.equal(again.value.profiles[0].id, a.id)
+  assert.equal(again.value.profiles.find(p => p.id === a.id).name, 'A')
   assert.equal(fs.statSync(path.join(root, 'code.json')).mode & 0o777, 0o600)
 })
 test('active session deletion is rejected and stopped records delete without touching checkout', (t) => {
@@ -72,7 +72,7 @@ test('launcher discovery records only known function names without evaluation', 
   const c = new CodeCatalog(path.join(root, 'catalog'), { seedFile: file })
   assert.deepEqual(
     c.value.profiles.map((p) => p.functionName),
-    ['claude-cio', 'claude-team']
+    ['claude', 'claude-cio', 'claude-team']
   )
   assert.ok(!JSON.stringify(c.value).includes('private'))
   assert.ok(!fs.existsSync('SHOULD_NOT_EXIST'))
@@ -80,8 +80,25 @@ test('launcher discovery records only known function names without evaluation', 
   assert.equal(
     new CodeCatalog(path.join(root, 'catalog'), { seedFile: file }).value
       .profiles.length,
-    1
+    2
   )
+})
+test('plain Claude is seeded in existing catalogs once without duplicating or restoring deleted profiles', t => {
+  const {root, catalog} = setup(t)
+  const defaultProfile = catalog.value.profiles.find(p => p.functionName === 'claude')
+  assert.equal(defaultProfile.name, 'claude')
+  assert.equal(defaultProfile.launcherFile, '/dev/null')
+  assert.deepEqual(defaultProfile.modes, ['chat', 'terminal'])
+  delete catalog.value.defaultClaudeSeeded
+  catalog.save()
+  const existing = new CodeCatalog(root, {seedFile:'/absent'})
+  assert.equal(existing.value.profiles.filter(p => p.functionName === 'claude').length, 1)
+  assert.equal(existing.value.profiles[0].id, defaultProfile.id)
+  existing.deleteProfile({id:defaultProfile.id})
+  assert.equal(new CodeCatalog(root, {seedFile:'/absent'}).value.profiles.length, 0)
+  delete existing.value.defaultClaudeSeeded
+  existing.save()
+  assert.equal(new CodeCatalog(root, {seedFile:'/absent'}).value.profiles[0].functionName, 'claude')
 })
 const { ClaudeProtocol } = require('../electron/code/claude-protocol.cjs')
 test('protocol validates exact identity and explicit permission decisions without replay', () => {

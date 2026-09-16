@@ -121,6 +121,18 @@ class CodeCatalog {
           )
       this.save()
     }
+    // Plain `claude` is available independently of custom account functions.
+    // Seed once for existing catalogs too; respect later deletion or renaming.
+    if (!this.value.defaultClaudeSeeded) {
+      if (!this.value.profiles.some(p => p.hostId === 'local' && p.functionName === 'claude')) {
+        this.value.profiles.unshift(this.profile({
+          name: 'claude', launcherFile: '/dev/null', functionName: 'claude',
+          sharedHistoryConfirmed: true
+        }))
+      }
+      this.value.defaultClaudeSeeded = true
+      this.save()
+    }
   }
   save() {
     if (this.blocked) fail('STORAGE_UNAVAILABLE')
