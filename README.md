@@ -1,6 +1,10 @@
 # zQ / zedQ
 
-A modular personal desktop workspace. The desktop app is in `apps/desktop`.
+zedQ brings tasks, notes, chat, and code/agents together in one productivity app.
+
+I wanted a way to reduce the number of apps I used, so I tried building a little zQ for myself.
+
+The desktop app is in `apps/desktop`.
 
 ## Run the desktop app
 
