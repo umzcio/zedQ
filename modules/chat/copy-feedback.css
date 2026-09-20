@@ -1,0 +1,9 @@
+.chat-copy-feedback{display:inline-grid;position:relative;width:14px;height:14px;flex:0 0 14px;vertical-align:middle}
+.chat-copy-feedback>svg{grid-area:1/1;width:14px;height:14px;transition:none;transform:none}
+.chat-copy-feedback>svg:first-child{opacity:1}
+.chat-copy-feedback>svg:last-child{opacity:0}
+.chat-copy-feedback[data-copied=true]>svg:first-child{opacity:0}
+.chat-copy-feedback[data-copied=true]>svg:last-child{opacity:1}
+.chat-copy-feedback[data-animate=true]>svg{transition:opacity 120ms var(--zq-ease-out)}
+@media(prefers-reduced-motion:reduce){.chat-copy-feedback[data-animate=true]>svg{transition:opacity 80ms var(--zq-ease-out)!important;transform:none!important}}
+.chat-copy-feedback[data-animate=false]>svg{transition:none!important}

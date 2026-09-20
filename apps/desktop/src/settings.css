@@ -46,6 +46,24 @@
 /* Preserve the original Appearance card layout and its responsive spacing. */
 .settings-page.settings-page-appearance{max-width:970px;padding:0}
 
-.voice-settings{max-width:720px}.voice-setting-row{display:flex;align-items:center;gap:12px;margin:18px 0}.voice-setting-row>label{width:120px;flex:none;font-size:13px}.voice-setting-row .zq-select-trigger{max-width:360px;flex:1}.voice-engine-status{padding:12px 0;font-size:13px}.voice-engine-status p,.voice-test p{color:var(--muted);font-size:13px;line-height:1.5}.voice-test{margin-top:28px;padding-top:22px;border-top:1px solid var(--border)}.voice-test h3{font-size:15px;margin:0 0 8px}.voice-test textarea{width:100%;resize:vertical;margin-top:12px}.voice-test-actions{display:flex;gap:6px;margin-top:8px}
-
-.voice-setting-row>.zq-tooltip-disabled:has(>.zq-select-trigger){flex:1;max-width:360px}
+/* Voice follows the same compact field and section rhythm as Settings. */
+.voice-settings{max-width:720px}
+.voice-configuration{display:flex;flex-direction:column;align-items:stretch;gap:16px}
+.voice-configuration>[data-slot="button"],.voice-configuration>.zq-tooltip-disabled{align-self:flex-start}
+.voice-setting-row{display:flex;align-items:center;gap:12px;min-height:32px}
+.voice-setting-row>label{width:120px;flex:none;font-size:13px}
+.voice-setting-row .zq-select-trigger,.voice-setting-row>.zq-tooltip-disabled:has(>.zq-select-trigger){max-width:360px;flex:1}
+.voice-settings [data-slot="button"]{font-size:12px}
+.voice-engine-status{margin-left:132px;font-size:12px;line-height:1.5}
+.voice-engine-status strong{display:block;margin-bottom:4px;font-weight:550}
+.voice-engine-status p,.voice-settings .settings-muted{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+.voice-engine-status p+p{margin-top:4px}
+.voice-microphone-field{display:grid;gap:6px}
+.voice-microphone-field>.settings-muted{margin-left:132px}
+.voice-test{margin-top:24px;padding-top:24px;border-top:1px solid var(--line)}
+.voice-test h3{font-size:15px;line-height:1.4;font-weight:550;margin:0}
+.voice-test>p{margin:6px 0 0;color:var(--muted);font-size:12px;line-height:1.5}
+.voice-test .voice-controls{margin:16px 0 12px}
+.voice-test textarea{width:100%;min-height:112px;resize:vertical;margin:0;font-size:13px;line-height:1.5}
+.voice-test-actions{display:flex;gap:8px;margin-top:8px}
+@media(max-width:850px){.voice-setting-row>label{width:100px}.voice-engine-status,.voice-microphone-field>.settings-muted{margin-left:112px}}

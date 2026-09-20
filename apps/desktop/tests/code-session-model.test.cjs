@@ -18,3 +18,12 @@ test('a resolution event collapses the original permission after incremental rep
  assert.equal(result[0].resolved,true)
  assert.equal(pending.resolved,undefined)
 })
+
+test('idle polls preserve the transcript and streaming preserves completed event identity',()=>{
+ const original=[{seq:1,eventId:'old',kind:'assistant',text:'Completed Markdown'},{seq:2,eventId:'live',kind:'assistant',text:'Hello'}]
+ assert.equal(mergeEvents(original,[]),original)
+ const updated=mergeEvents(original,[{seq:3,eventId:'live',kind:'assistant',text:'Hello world'}])
+ assert.equal(updated[0],original[0])
+ assert.equal(updated.length,2)
+ assert.equal(updated[1].text,'Hello world')
+})

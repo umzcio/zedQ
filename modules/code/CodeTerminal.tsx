@@ -18,8 +18,10 @@ import { codeError } from "./errors";
 
 export function CodeTerminal({
   session,
+  focused = true,
 }: {
   session: CodeSession;
+  focused?: boolean;
 }) {
   const host = useHost(),
     bridge = host.services.code,
@@ -32,6 +34,9 @@ export function CodeTerminal({
     [finding, setFinding] = useState(false),
     [attached, setAttached] = useState(false),
     [generation, setGeneration] = useState(0);
+  const focusRef = useRef(focused);
+  focusRef.current = focused;
+  useEffect(() => { if (focused) terminal.current?.focus(); }, [focused]);
   const active = !["switching", "stopped", "recoverable", "error", "disconnected"].includes(session.state);
   useEffect(() => {
     if (!element.current || !active) return;
@@ -40,16 +45,19 @@ export function CodeTerminal({
     attachment.current = attachmentId;
     let disposed = false,
       connected = false,
+      exited = false,
       resizeTimer: ReturnType<typeof setTimeout> | undefined;
     const theme = () => {
       const style = getComputedStyle(element.current!);
+      const dark = document.documentElement.dataset.theme === "dark";
+      const background = style.getPropertyValue("--code-terminal-bg").trim() || (dark ? "#191919" : "#ffffff");
+      const foreground = style.getPropertyValue("--code-terminal-fg").trim() || (dark ? "#e6e6e6" : "#303030");
       return {
-        background:
-          style.getPropertyValue("--code-terminal-bg").trim() || "#181818",
-        foreground:
-          style.getPropertyValue("--code-terminal-fg").trim() || "#e5e5e5",
-        cursor:
-          style.getPropertyValue("--code-terminal-fg").trim() || "#e5e5e5",
+        background,
+        foreground,
+        cursor: foreground,
+        cursorAccent: background,
+        selectionBackground: style.getPropertyValue("--selection").trim(),
       };
     };
     const term = new Terminal({
@@ -60,6 +68,7 @@ export function CodeTerminal({
       convertEol: false,
       cursorBlink: false,
       allowProposedApi: false,
+      minimumContrastRatio: 4.5,
       theme: theme(),
     });
     const fit = new FitAddon(),
@@ -86,6 +95,12 @@ export function CodeTerminal({
         return;
       if (chunk.reset) term.reset();
       term.write(chunk.data);
+      if (chunk.exited) {
+        exited = true;
+        connected = false;
+        setAttached(false);
+        setError(chunk.exitCode ? "Terminal connection failed. Check the terminal output, then reconnect." : "Terminal connection closed.");
+      }
     });
     const input = term.onData((data) => {
       if (connected)
@@ -126,7 +141,7 @@ export function CodeTerminal({
     });
     appearance.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["class", "data-theme"],
+      attributeFilter: ["class", "data-theme", "data-palette"],
     });
     void bridge
       .invoke("claimSession", { id: session.id })
@@ -146,9 +161,10 @@ export function CodeTerminal({
             .catch(() => {});
           return;
         }
+        if (exited) return;
         connected = true;
         setAttached(true);
-        term.focus();
+        if (focusRef.current) term.focus();
       })
       .catch(fail);
     return () => {

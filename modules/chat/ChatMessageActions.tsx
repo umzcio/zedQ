@@ -1,6 +1,6 @@
 import { TooltipButton } from '@zq/ui'
-import {useEffect,useRef,useState,type ReactNode} from 'react'
-import {ArrowClockwise,CaretLeft,CaretRight,Check,Copy,DotsThree,PencilSimple} from '@phosphor-icons/react'
+import {useRef,useState,type ReactNode} from 'react'
+import {ArrowClockwise,CaretLeft,CaretRight,DotsThree,PencilSimple} from '@phosphor-icons/react'
 import {useHost,unwrap,type ChatMessage,type ModelChoice,type Note} from '@zq/module-api'
 import {Button,ContextMenu,ContextMenuContent,ContextMenuItem,ContextMenuTrigger,Dialog,DialogContent,DialogDescription,DialogTitle,DropdownMenu,DropdownMenuContent,DropdownMenuItem,DropdownMenuTrigger,SelectField} from '@zq/ui'
 import type {ChatController} from './useChat'
@@ -9,24 +9,26 @@ import {plainMessage,sourceMessageLink} from './message-text'
 import './chat-message-actions.css'
 import './artifacts.css'
 import ArtifactEditor from './ArtifactEditor'
+import CopyFeedbackIcon from './CopyFeedbackIcon'
+import {useCopyFeedback} from './useCopyFeedback'
 
 type Props={message:ChatMessage;chat:ChatController;choice:ModelChoice|null;disabled:boolean;notes:Note[];settings:()=>void;children:ReactNode;matched?:boolean;currentMatch?:boolean}
 export default function ChatMessageActions({message:m,chat,choice,disabled,notes,settings,children,matched,currentMatch}:Props){
- const {commands,notify,services}=useHost(),[artifactEditor,setArtifactEditor]=useState(false),[artifactLibrary,setArtifactLibrary]=useState<import('@zq/module-api').Artifact[]>([]),[menu,setMenu]=useState(false),[dialog,setDialog]=useState<'edit'|'regenerate'|'details'|'append'|null>(null),[text,setText]=useState(m.content),[targetModel,setTargetModel]=useState(choice),[noteId,setNoteId]=useState(''),[selection,setSelection]=useState(''),[pending,setPending]=useState(false),[error,setError]=useState(''),[copied,setCopied]=useState(false)
- const article=useRef<HTMLElement>(null),trigger=useRef<HTMLButtonElement>(null),lock=useRef(false),timer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined),openingDialog=useRef(false)
+ const {commands,notify,services}=useHost(),[artifactEditor,setArtifactEditor]=useState(false),[artifactLibrary,setArtifactLibrary]=useState<import('@zq/module-api').Artifact[]>([]),[menu,setMenu]=useState(false),[dialog,setDialog]=useState<'edit'|'regenerate'|'details'|'append'|null>(null),[text,setText]=useState(m.content),[targetModel,setTargetModel]=useState(choice),[noteId,setNoteId]=useState(''),[selection,setSelection]=useState(''),[pending,setPending]=useState(false),[error,setError]=useState('')
+ const article=useRef<HTMLElement>(null),trigger=useRef<HTMLButtonElement>(null),lock=useRef(false),openingDialog=useRef(false)
  const conversation=chat.conversation!,blocked=disabled||pending,versions=m.versions??[],versionIndex=versions.findIndex(v=>v.id===m.activeVersionId)
- useEffect(()=>()=>clearTimeout(timer.current),[])
+ const feedback=useCopyFeedback(JSON.stringify([conversation.id,m.id,m.activeVersionId,m.content])),{copied}=feedback
  function captureSelection(){const value=window.getSelection();setSelection(value&&!value.isCollapsed&&article.current?.contains(value.anchorNode)&&article.current?.contains(value.focusNode)?value.toString():'')}
  async function perform(action:()=>Promise<unknown>){if(blocked||lock.current)return;lock.current=true;setPending(true);setError('');try{await action();setDialog(null)}catch(e){setError((e as Error).message);notify((e as Error).message)}finally{lock.current=false;setPending(false)}}
- async function copy(markdown:boolean){try{await unwrap(services.clipboard.writeText(markdown?m.content:plainMessage(m.content)));setCopied(true);clearTimeout(timer.current);timer.current=setTimeout(()=>setCopied(false),1800)}catch{notify('Couldn’t copy this message. Select the text and press ⌘C.')}}
+ const copy=(markdown:boolean,animate=false)=>feedback.run(()=>unwrap(services.clipboard.writeText(markdown?m.content:plainMessage(m.content))),animate,()=>notify('Couldn’t copy this message. Select the text and press ⌘C.'))
  function open(kind:NonNullable<typeof dialog>){openingDialog.current=true;setError('');setText(m.content);setTargetModel(choice);setDialog(kind)}
  const source=`\n\nSource: [${conversation.title.replace(/[\[\]]/g,'')||'Chat'}](${sourceMessageLink(conversation.id,m.id,m.activeVersionId)})`
  const savedText=(selection||m.content)+source
  function saveNote(){if(!blocked)commands.run('notes.new',savedText)}
  function saveTask(){if(!blocked)commands.run('tasks.new',{title:plainMessage(selection||m.content).split('\n').find(line=>line.trim())?.slice(0,120)||'Follow up on chat',description:savedText})}
  const actions=[
-  {id:'plain',label:'Copy as plain text',run:()=>void copy(false),disabled:!m.content},
-  {id:'markdown',label:'Copy as Markdown',run:()=>void copy(true),disabled:!m.content},
+  {id:'plain',label:'Copy as plain text',run:(animate=false)=>void copy(false,animate),disabled:!m.content},
+  {id:'markdown',label:'Copy as Markdown',run:(animate=false)=>void copy(true,animate),disabled:!m.content},
   ...(selection?[{id:'selection',label:'Copy selected text',run:()=>{void unwrap(services.clipboard.writeText(selection)).catch(()=>notify('Couldn’t copy selected text'))},disabled:false}]:[]),
   {id:'revise',label:m.role==='user'?'Edit and resend…':m.status==='error'||m.status==='interrupted'?'Retry response…':'Regenerate response…',run:()=>open(m.role==='user'?'edit':'regenerate'),disabled:blocked},
   {id:'branch',label:'Branch from here',run:()=>void perform(()=>chat.branch(m.id)),disabled:blocked},
@@ -38,15 +40,15 @@ export default function ChatMessageActions({message:m,chat,choice,disabled,notes
   ...(m.role==='assistant'?[{id:'details',label:'Response details',run:()=>open('details'),disabled:false}]:[]),
  ]
  function menuClose(e:Event){if(openingDialog.current)e.preventDefault()}
- return <><ContextMenu onOpenChange={value=>{setMenu(value);if(value)captureSelection()}}><ContextMenuTrigger asChild><article ref={article} tabIndex={0} data-message-id={m.id} data-find-match={matched||undefined} data-find-current={currentMatch||undefined} data-actions-open={menu||undefined} className={`chat-message message-${m.role}`} aria-label={m.role==='user'?'Your message':'zQ response'} onKeyDown={e=>{if(e.target===e.currentTarget&&e.key==='F2'&&m.role==='user'&&!blocked){e.preventDefault();open('edit')}}}>
+ return <><ContextMenu onOpenChange={value=>{feedback.menu.reset();setMenu(value);if(value)captureSelection()}}><ContextMenuTrigger asChild><article ref={article} tabIndex={0} data-message-id={m.id} data-find-match={matched||undefined} data-find-current={currentMatch||undefined} data-actions-open={menu||undefined} className={`chat-message message-${m.role}`} aria-label={m.role==='user'?'Your message':'zQ response'} onKeyDown={e=>{if(e.target===e.currentTarget&&e.key==='F2'&&m.role==='user'&&!blocked){e.preventDefault();open('edit')}}}>
   <div className="chat-message-body">{children}</div>
   <div className="chat-message-actions">
    {versions.length>1&&<div className="chat-version-nav" aria-label="Message versions"><TooltipButton type="button" aria-label="Previous version" tooltip="Show the previous saved message version" disabled={blocked||versionIndex<=0} onClick={()=>void perform(()=>chat.selectVersion(m.id,versions[versionIndex-1].id))}><CaretLeft size={12}/></TooltipButton><span aria-live="polite">{versionIndex+1} / {versions.length}</span><TooltipButton type="button" aria-label="Next version" tooltip="Show the next saved message version" disabled={blocked||versionIndex<0||versionIndex>=versions.length-1} onClick={()=>void perform(()=>chat.selectVersion(m.id,versions[versionIndex+1].id))}><CaretRight size={12}/></TooltipButton></div>}
-   <TooltipButton type="button" title={copied?'Copied':'Copy message'} aria-label={copied?'Message copied':'Copy message'} disabled={!m.content} onClick={()=>void copy(false)}>{copied?<Check size={14}/>:<Copy size={14}/>}</TooltipButton>
+   <TooltipButton type="button" title={copied?'Copied':'Copy message'} aria-label={copied?'Message copied':'Copy message'} disabled={!m.content} onClick={event=>void copy(false,event.detail>0)}><CopyFeedbackIcon copied={copied} animate={feedback.animate}/></TooltipButton>
    <TooltipButton type="button" tooltip={m.role==='user'?'Edit this message and start a new response version':'Generate another response version to this message'} aria-label={m.role==='user'?'Edit and resend':'Regenerate response'} disabled={blocked} onClick={()=>open(m.role==='user'?'edit':'regenerate')}>{m.role==='user'?<PencilSimple size={14}/>:<ArrowClockwise size={14}/>}</TooltipButton>
-   <DropdownMenu onOpenChange={value=>{setMenu(value);if(value)captureSelection()}}><DropdownMenuTrigger asChild><TooltipButton ref={trigger} type="button" aria-label="Message actions" tooltip="Copy, save, or manage this message"><DotsThree size={18}/></TooltipButton></DropdownMenuTrigger><DropdownMenuContent align={m.role==='user'?'end':'start'} onCloseAutoFocus={menuClose}>{actions.map(a=><DropdownMenuItem key={a.id} disabled={a.disabled} onSelect={a.run}>{a.label}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>
+   <DropdownMenu onOpenChange={value=>{feedback.menu.reset();setMenu(value);if(value)captureSelection()}}><DropdownMenuTrigger asChild><TooltipButton ref={trigger} type="button" aria-label="Message actions" tooltip="Copy, save, or manage this message"><DotsThree size={18}/></TooltipButton></DropdownMenuTrigger><DropdownMenuContent align={m.role==='user'?'end':'start'} onCloseAutoFocus={menuClose} onKeyDownCapture={feedback.menu.reset}>{actions.map(a=><DropdownMenuItem key={a.id} disabled={a.disabled} onClickCapture={feedback.menu.onClickCapture} onSelect={()=>a.run(feedback.menu.consume())}>{a.label}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>
   </div><span className="sr-only" role="status">{copied?'Message copied':''}</span>
- </article></ContextMenuTrigger><ContextMenuContent onCloseAutoFocus={menuClose}>{actions.map(a=><ContextMenuItem key={a.id} disabled={a.disabled} onSelect={a.run}>{a.label}</ContextMenuItem>)}</ContextMenuContent></ContextMenu>
+ </article></ContextMenuTrigger><ContextMenuContent onCloseAutoFocus={menuClose} onKeyDownCapture={feedback.menu.reset}>{actions.map(a=><ContextMenuItem key={a.id} disabled={a.disabled} onClickCapture={feedback.menu.onClickCapture} onSelect={()=>a.run(feedback.menu.consume())}>{a.label}</ContextMenuItem>)}</ContextMenuContent></ContextMenu>
  <Dialog open={!!dialog} onOpenChange={value=>{if(!value&&!pending)setDialog(null)}}><DialogContent className="chat-message-dialog" onCloseAutoFocus={e=>{e.preventDefault();openingDialog.current=false;trigger.current?.focus({preventScroll:true})}}><DialogTitle>{dialog==='edit'?'Edit and resend':dialog==='regenerate'?'Regenerate response':dialog==='append'?'Append to note':'Response details'}</DialogTitle><DialogDescription>{dialog==='edit'||dialog==='regenerate'?'The original and its following messages remain available in version history.':dialog==='append'?'Adds this text and a link to its source conversation.':'The provider and model recorded when this response was requested.'}</DialogDescription>
   {(dialog==='edit'||dialog==='regenerate')&&<form onSubmit={e=>{e.preventDefault();if(!targetModel)return;void perform(()=>chat.revise({conversationId:conversation.id,messageId:m.id,...(dialog==='edit'?{text}:{}),...targetModel}))}}>
    {dialog==='edit'&&<textarea autoFocus className="chat-message-editor" aria-label="Edit message" value={text} disabled={blocked} onChange={e=>setText(e.target.value)}/>}

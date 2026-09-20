@@ -1,6 +1,6 @@
 # zQ / zedQ
 
-A modular personal desktop workspace. The first desktop foundation is in `apps/desktop`; the original browser design preview remains in `prototype`.
+A modular personal desktop workspace. The desktop app is in `apps/desktop`.
 
 ## Run the desktop app
 
@@ -34,7 +34,7 @@ App bundle: `apps/desktop/release/mac-arm64/zQ.app`. This is a local development
 - Scratchpad edits autosave; local file edits autosave a recovery draft, while Cmd+S writes the original file. File warnings offer reload or saving a copy. Closing a file view retains its recovery draft.
 - Quit flushes pending work. A save failure keeps the app open unless the user explicitly chooses to quit without saving.
 
-The desktop starts with one blank note and no sample tasks. Browser prototype data is separate and is not silently imported. Cross-Mac sync, memory and Work are not implemented yet. Code adds persistent Claude/CLI sessions, profile handoff, real terminals, files, diffs, previews and SSH hosts. HQ, Notes, Tasks, Chat and Code own their code in separate modules and load from independently built, signed packages. Settings → Modules installs local or HTTPS updates and stages rollback for the next launch. These are trusted first-party modules, not a public third-party plugin sandbox. See [module architecture and release guide](docs/modules.md).
+The desktop starts with one blank note and no sample tasks. Cross-Mac sync, memory and Work are not implemented yet. Code adds persistent Claude/CLI sessions, profile handoff, real terminals, files, diffs, previews and SSH hosts. HQ, Notes, Tasks, Chat and Code own their code in separate modules and load from independently built, signed packages. Settings → Modules installs local or HTTPS updates and stages rollback for the next launch. These are trusted first-party modules, not a public third-party plugin sandbox. See [module architecture and release guide](docs/modules.md).
 
 ## Runtime validation
 

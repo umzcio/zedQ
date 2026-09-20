@@ -46,7 +46,6 @@
 .context-note-list .note-list-item.selected{background:var(--selection);color:var(--text)}
 .context-search{padding:7px 9px;margin:5px 6px 14px;border-radius:7px}
 .context-hint{border-top:0;line-height:1.6}
-.app-status,.chat-shell .app-status{border-top:0;background:var(--canvas);color:var(--faint);height:27px;min-height:27px}
 .chat-shell .context-sidebar{border-right:1px solid var(--line)}
 :root[data-theme="dark"] .project-icon{color:var(--project-icon-dark)}
 .message-user{background:var(--hover)}
@@ -86,3 +85,19 @@
 .module-update-error{color:var(--color-destructive)}
 
 .workspace-draft-notice{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 18px;border-bottom:1px solid var(--line);background:var(--panel);color:var(--text);font-size:12px}.workspace-draft-dialog{max-width:560px}.workspace-draft-list{max-height:50vh;overflow:auto}.workspace-draft-item{padding:12px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.workspace-draft-item strong{font-size:13px}.workspace-draft-item p{font-size:12px;color:var(--muted);margin:6px 0 10px}.workspace-draft-item>div{display:flex;gap:8px}
+
+/* One retained surface lets successive notices interrupt the current fade. */
+.shell-notice{opacity:0;transition:opacity 150ms var(--zq-ease-out)}
+.shell-notice[data-visible=true]{opacity:1}
+@media(prefers-reduced-motion:reduce){.shell-notice{transition:none}}
+
+/* Only a newly verified pointer action opts a pending label into this cue. */
+.module-update-pending{display:inline-block;transform-origin:left center}
+.module-update-pending[data-feedback=enter]{opacity:0;transform:scale(.97)}
+.module-update-pending[data-feedback=visible]{opacity:1;transform:scale(1);transition:opacity 150ms var(--zq-ease-out),transform 150ms var(--zq-ease-out)}
+@media(prefers-reduced-motion:reduce){
+ .module-update-pending[data-feedback=enter],.module-update-pending[data-feedback=visible]{transform:none!important}
+ .module-update-pending[data-feedback=visible]{transition:opacity 80ms var(--zq-ease-out)!important}
+}
+
+.shell-notice>button{border:1px solid var(--line);border-radius:5px;padding:4px 8px;margin-left:10px;background:var(--panel);color:var(--text);font:inherit;cursor:pointer}

@@ -1,16 +1,21 @@
+const {TransferService}=require('./transfer-service.cjs')
+const {sessionWorkspace,validateSessionWorkspace}=require('./session-workspace.cjs')
 const fs = require('node:fs'),
   path = require('node:path'),
   os = require('node:os')
 const { connectCodeService } = require('./session-client.cjs')
 const { randomUUID } = require('node:crypto')
 const { prepareRoot, fail, uuid } = require('./service-storage.cjs')
-const { RemoteHosts, sshArgs, discoverAliases } = require('./remote.cjs')
+const { RemoteHosts, sshArgs, asUser, discoverAliases } = require('./remote.cjs')
 const { Previews } = require('./preview.cjs')
 const { resolveFile } = require('./workspace.cjs')
 const METHODS = new Set([
+  'listNativeSessions', 'openNativeSession',
+  'listKimiSessions', 'openKimiSession', 'createKimiSession',
   'createHost', 'updateHost', 'deleteHost', 'discoverHosts', 'connectHost', 'disconnectHost',
+  'uploadFiles', 'downloadFile', 'fileTransfers',
   'listFiles', 'readFile', 'writeFile', 'gitStatus', 'gitDiff', 'gitRepository', 'gitCommit', 'gitFetch', 'revealFile',
-  'discoverTerminals', 'attachExternalTerminal', 'openPreview', 'stopPreview', 'listPreviews',
+  'discoverTerminals', 'attachExternalTerminal', 'createTerminal', 'linkTerminal', 'openPreview', 'stopPreview', 'listPreviews',
   'snapshot',
   'pickDirectory',
   'createProject',
@@ -61,6 +66,7 @@ class CodeService {
     onChange = () => {},
     onTerminal = () => {},
     pickDirectory,
+    pickUpload, pickDownload, confirmReplace,
     openExternal,
     reveal,
     tmuxPath = executable('tmux'),
@@ -69,6 +75,7 @@ class CodeService {
   }) {
     prepareRoot(directory)
     this.remotes = new RemoteHosts(directory)
+    this.transfers = new TransferService(this,{pickUpload,pickDownload,confirmReplace})
     this.previews = new Previews()
     this.snapshotSerial = 0
     this.directory = directory
@@ -161,8 +168,14 @@ class CodeService {
   }
   async requestOnce(method, input = {}) {
     const snapshot = this.lastSnapshot || await this.snapshot()
-    const row = [...snapshot.projects, ...snapshot.profiles, ...snapshot.sessions].find(r => r.id === (input.projectId || input.id))
+    if(input.sessionId!==undefined)validateSessionWorkspace(method,input)
+    const row = [...snapshot.projects, ...snapshot.profiles, ...snapshot.sessions].find(r => r.id === (input.id || input.projectId || input.sessionId))
+    if(input.sessionId!==undefined && !snapshot.sessions.some(s=>s.id===input.sessionId))fail('UNKNOWN_SESSION')
     const hostId = input.hostId || row?.hostId || 'local'
+    if (method === 'linkTerminal' && input.projectId) {
+      const project = snapshot.projects.find(p => p.id === input.projectId)
+      if (!project || project.hostId !== hostId) fail('HOST_MISMATCH')
+    }
     if (input.patch?.hostId && input.patch.hostId !== hostId) fail('HOST_MISMATCH')
     if (hostId !== 'local') {
       const params = { ...input }
@@ -172,6 +185,7 @@ class CodeService {
       if (result && result.hostId) result.hostId = hostId
       return result
     }
+    if(input.sessionId!==undefined)return sessionWorkspace(snapshot,method,input)
     return this.localRequest(method, input)
   }
   async snapshot() {
@@ -247,6 +261,8 @@ class CodeService {
     )
       fail('INVALID_REQUEST')
     if (['attachTerminal','detachTerminal','writeTerminal','resizeTerminal'].includes(method) && input?.attachmentId !== undefined && !uuid(input.attachmentId)) fail('INVALID_REQUEST')
+    if (method === 'uploadFiles' || method === 'downloadFile') return this.transfers.run(method,input)
+    if (method === 'fileTransfers') return this.transfers.list(input)
     if (method === 'snapshot') return this.snapshot()
     if (method === 'discoverHosts') return discoverAliases()
     if (method === 'listPreviews') return this.previews.list()
@@ -322,7 +338,7 @@ class CodeService {
         const host = this.remotes.find(session.hostId), client = this.remotes.clients.get(session.hostId)
         if (!client) fail('HOST_DISCONNECTED')
         binary = '/usr/bin/ssh'
-        args = sshArgs(host.sshAlias, [client.metadata.tmuxPath, ...(external ? [] : ['-f','/dev/null','-S',path.posix.join(client.metadata.root,'tmux')]), 'attach-session','-t', external ? session.tmuxTarget : '=zqc-' + input.id], true)
+        args = sshArgs(host.sshAlias, asUser([client.metadata.tmuxPath, ...(external ? [] : ['-f','/dev/null','-S',path.posix.join(client.metadata.root,'tmux')]), 'attach-session','-t', external ? session.tmuxTarget : '=zqc-' + input.id], host.runAs || 'login'), true)
       }
       const terminal = this.pty.spawn(binary, args, {
         name: 'xterm-256color', cols: input.cols, rows: input.rows, cwd: this.directory, env
@@ -353,10 +369,12 @@ class CodeService {
           })
         }
       })
-      terminal.onExit(() => {
+      terminal.onExit(({exitCode}) => {
         if (this.terminals.get(input.id) === terminal) {
           this.terminals.delete(input.id)
           this.attachments.delete(input.id)
+          this.onTerminal({sessionId:input.id,attachmentId:attachment.id,data:queued,exited:true,exitCode})
+          queued = ''
         }
       })
       return { ok: true, attachmentId: attachment.id }
@@ -373,9 +391,16 @@ class CodeService {
       if (input.attachmentId !== undefined && this.attachments.get(input.id)?.id !== input.attachmentId) fail('ATTACHMENT_SUPERSEDED')
       const terminal = this.terminals.get(input.id)
       if (!terminal) fail('TERMINAL_NOT_ATTACHED')
-      await this.request(method, input)
-      if (this.terminals.get(input.id) !== terminal) fail('ATTACHMENT_SUPERSEDED')
-      if (method === 'resizeTerminal') terminal.resize(input.cols, input.rows)
+      // attachTerminal already acquired the session lease. Input belongs to this
+      // live client PTY, not to tmux send-keys (which bypasses tmux mouse/copy
+      // mode and adds two remote subprocesses to every wheel/key event).
+      if (method === 'writeTerminal') {
+        if (typeof input.data !== 'string' || input.data.includes('\0') || Buffer.byteLength(input.data) > 8192) fail('INVALID_REQUEST')
+        terminal.write(input.data)
+      } else {
+        if (!Number.isInteger(input.cols) || input.cols < 2 || input.cols > 512 || !Number.isInteger(input.rows) || input.rows < 2 || input.rows > 200) fail('INVALID_REQUEST')
+        terminal.resize(input.cols, input.rows)
+      }
       return { ok: true }
     }
     if (method === 'stopSession') {
@@ -399,6 +424,7 @@ class CodeService {
     this.attachments.clear()
     for (const id of this.terminals.keys()) this.detach(id)
     this.client?.close()
+    this.transfers.close()
     this.remotes.close()
     this.previews.close()
     this.client = null

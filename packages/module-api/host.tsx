@@ -5,9 +5,12 @@ import type { DesktopBridge, WorkspaceState, FileDocument } from './desktop'
 import type { Note, Task, Status } from './data'
 import type { ModuleManifest, View } from './types'
 export type Commands = {
+ 'code.closeTab':undefined;
+ 'code.open':{id:string};
+ 'code.dismissSession':{id:string};
  'artifacts.open':{artifactId?:string;versionId?:string};
  'notes.attachArtifact':{id:string;artifact:import('./artifact-types').ArtifactReference}; 'tasks.attachArtifact':{id:string;artifact:import('./artifact-types').ArtifactReference};
- 'chat.open':{conversationId:string;messageId?:string;versionId?:string}; 'notes.append':{id:string;body:string}; 'notes.open':string; 'notes.new':string|undefined; 'notes.rename':string; 'notes.pin':string; 'notes.split':string;
+ 'chat.open':{conversationId:string;messageId?:string;versionId?:string;report?:import('./artifact-types').ArtifactTarget}; 'notes.append':{id:string;body:string}; 'notes.open':string; 'notes.new':string|undefined; 'notes.rename':string; 'notes.pin':string; 'notes.split':string;
  'files.open':undefined; 'files.save':'save'|'saveAs';
  'tasks.new':Partial<Task>|undefined; 'tasks.edit':Task; 'tasks.move':{id:string;status:Status}; 'tasks.show':{project:string;scope:string};
 }
@@ -19,9 +22,9 @@ export type Host = {
  registerFlush:(id:string,flush:()=>Promise<void>)=>()=>void;
  closing:boolean;saveStatus:string;initialFiles:FileDocument[];
  onFilesChange:(files:FileDocument[])=>void;onFileFlush:(flush:()=>Promise<void>)=>void;flushWorkspace:()=>Promise<void>;
- services:Pick<DesktopBridge,'code'|'chat'|'connectors'|'attachments'|'files'|'voice'|'artifacts'|'clipboard'>;
+ services:Pick<DesktopBridge,'github'|'code'|'chat'|'research'|'connectors'|'attachments'|'files'|'voice'|'artifacts'|'clipboard'>;
  openSettings?:(section:SettingsSection)=>void;
- commands:CommandBus;navigate:(view:View)=>void;notify:(message:string)=>void;
+ commands:CommandBus;navigate:(view:View)=>void;notify:(message:string,action?:{label:string;run:()=>void})=>void;
  focusMode:boolean;setFocusMode:Dispatch<SetStateAction<boolean>>;
  targets:{view:HTMLElement|null;sidebar:HTMLElement|null;settings:HTMLElement|null;skillsSettings?:HTMLElement|null;connectorsSettings?:HTMLElement|null};
 }

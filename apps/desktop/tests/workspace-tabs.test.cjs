@@ -33,3 +33,26 @@ test('mixed tabs reorder in either direction without changing the active documen
  assert.deepEqual(closeTabs(original,'external','others'),original);
  assert.deepEqual(original,mixed());
 });
+
+const { edgeScrollPosition } = require('../../../modules/notes/tab-edge-scroll.ts');
+const strip = {left:100,right:600,top:20,bottom:60};
+test('held-edge scrolling integrates elapsed time in both directions', () => {
+ const integrate=(frames,x,start=600)=>frames.reduce((position,ms)=>edgeScrollPosition(strip,position,2000,{x,y:40},ms),start);
+ assert.ok(Math.abs(integrate(Array(100).fill(10),600)-1080)<1e-8);
+ assert.ok(Math.abs(integrate(Array(50).fill(20),600)-1080)<1e-8);
+ assert.ok(Math.abs(integrate(Array(50).fill(20),100)-120)<1e-8);
+ assert.ok(Math.abs(integrate(Array(50).fill(20),584)-840)<1e-8);
+});
+test('edge scrolling stops in the center or outside vertical hit tolerance', () => {
+ for(const point of [{x:350,y:40},{x:600,y:3},{x:100,y:77}]) assert.equal(edgeScrollPosition(strip,600,2000,point,16),600);
+ assert.ok(edgeScrollPosition(strip,600,2000,{x:600,y:4},16)>600);
+ assert.ok(edgeScrollPosition(strip,600,2000,{x:100,y:76},16)<600);
+});
+test('edge scrolling clamps range and caps delayed frames without momentum', () => {
+ assert.equal(edgeScrollPosition(strip,1999,2000,{x:620,y:40},32),2000);
+ assert.equal(edgeScrollPosition(strip,1,2000,{x:80,y:40},32),0);
+ assert.equal(edgeScrollPosition(strip,0,-100,{x:620,y:40},16),0);
+ assert.equal(edgeScrollPosition(strip,500,2000,{x:620,y:40},1000),515.36);
+ assert.equal(edgeScrollPosition(strip,500,2000,{x:620,y:40},0),500);
+ assert.equal(edgeScrollPosition(strip,500,2000,{x:620,y:40},-10),500);
+});

@@ -10,6 +10,10 @@ const {
 } = require('./code-catalog.cjs')
 const { buildClaudeResume, validModel } = require('./claude-launch.cjs')
 const { createHandoffCoordinator } = require('./handoff.cjs')
+const { CodexSessions } = require('./codex-sessions.cjs')
+const { NativeSessions, seedNativeProfiles } = require('./native-sessions.cjs')
+const { readClaudeHistory } = require('./claude-history.cjs')
+const { KimiSessions } = require('./kimi-sessions.cjs')
 const { requestRunner } = require('./structured-runner.cjs')
 const { fail } = require('./service-storage.cjs')
 const { workspace, workspaceMethods } = require('./workspace.cjs')
@@ -24,6 +28,10 @@ class CodeHost {
     this.tmux = tmux
     this.nodePath = nodePath
     this.catalog = new CodeCatalog(paths.root, { seedFile })
+    seedNativeProfiles(this.catalog)
+    this.kimi = new KimiSessions(this)
+    this.codex = new CodexSessions(this)
+    this.native = new NativeSessions(this)
     this.leases = new Map()
     this.handles = new Map()
     this.eventCursors = new Map()
@@ -75,6 +83,7 @@ class CodeHost {
     if (this.leases.get(id) !== owner) fail('LEASE_REQUIRED')
   }
   async status(s) {
+    if (['kimi','codex'].includes(s.adapter)) return this[s.adapter].status(s)
     if (s.ownership === 'external') {
       const info = await this.external.inspect(s.tmuxTarget)
       const state = info && info.identity === s.tmuxIdentity ? 'ready' : 'stopped'
@@ -244,6 +253,7 @@ class CodeHost {
         profileId: profile.id,
         receipt,
         nonce,
+        ...(s.nativeHistory && !fresh ? {nativeReplay: await readClaudeHistory(this.nodePath, 'read', {nativeId:s.nativeId, cwd:s.cwd})} : {}),
         fresh
       })
       actual = {
@@ -372,6 +382,7 @@ class CodeHost {
     atomic(file, journal)
   }
   async stop(s) {
+    if (s.adapter === 'kimi') return this.kimi.stop(s)
     if (s.ownership === 'external') fail('EXTERNAL_SESSION_OWNERSHIP')
     const live = await this.tmux.inspect(this.name(s.id))
     if (!live) {
@@ -424,20 +435,52 @@ class CodeHost {
     if (!input || typeof input !== 'object' || Array.isArray(input))
       fail('INVALID_REQUEST')
     if (workspaceMethods.has(method)) return workspace(this.catalog.find('projects', input.projectId).cwd, method, input)
+    if (method === 'listNativeSessions') return this.native.list(input)
+    if (method === 'openNativeSession') return this.native.open(owner, input)
+    if (method === 'listKimiSessions') return this.kimi.list()
+    if (method === 'openKimiSession') return this.kimi.open(owner, input)
+    if (method === 'createKimiSession') return this.kimi.open(owner, input, true)
     if (method === 'discoverTerminals') return this.external.discover()
-    if (method === 'attachExternalTerminal') {
+    if (method === 'createTerminal') {
+      keys(input, ['hostId','name','projectId'])
+      if (!text(input.name,64) || !/^[A-Za-z0-9_-]+$/.test(input.name) || (input.hostId && input.hostId !== 'local')) fail('INVALID_REQUEST')
       if (this.catalog.value.sessions.length >= 32) fail('LIMIT_REACHED')
-      keys(input, ['projectId','target','title'])
-      if (typeof input.target !== 'string' || !/^\$\d+$/.test(input.target) || (input.title !== undefined && !text(input.title,200))) fail('INVALID_REQUEST')
-      const project = this.catalog.find('projects', input.projectId)
+      const project = input.projectId ? this.catalog.find('projects', input.projectId) : null
+      const target = await this.external.create(input.name, project?.cwd || require('node:os').homedir())
+      return this.dispatch(owner, 'attachExternalTerminal', { target, ...(project ? {projectId:project.id} : {}) })
+    }
+    if (method === 'attachExternalTerminal') {
+      keys(input, ['hostId','projectId','target','title','identity'])
+      if (typeof input.target !== 'string' || !/^\$\d+$/.test(input.target) || (input.title !== undefined && !text(input.title,200)) || (input.hostId && input.hostId !== 'local')) fail('INVALID_REQUEST')
+      const project = input.projectId ? this.catalog.find('projects', input.projectId) : null
       const info = await this.external.inspect(input.target)
       if (!info) fail('NOT_FOUND')
+      if (input.identity !== undefined && input.identity !== info.identity) fail('SESSION_IDENTITY_CHANGED')
+      const existing = this.catalog.value.sessions.find(s => s.ownership === 'external' && s.tmuxTarget === input.target && s.tmuxIdentity === info.identity)
+      if (existing) {
+        if (this.leases.has(existing.id) && this.leases.get(existing.id) !== owner) fail('LEASE_HELD')
+        if (info.attached && this.externalOwners.get(existing.id)?.owner !== owner) fail('EXTERNAL_TERMINAL_IN_USE')
+        this.leases.set(existing.id, owner)
+        if (project && !existing.projectId) existing.projectId = project.id
+        existing.archivedAt = null
+        await this.status(existing); this.catalog.save()
+        return existing
+      }
       if (info.attached) fail('EXTERNAL_TERMINAL_IN_USE')
-      if (this.catalog.value.sessions.some(s => s.ownership === 'external' && s.tmuxTarget === input.target && s.tmuxIdentity === info.identity)) fail('ALREADY_ATTACHED')
-      const s = { id: randomUUID(), projectId: project.id, hostId: project.hostId, cwd: project.cwd, profileId: '',
+      if (this.catalog.value.sessions.length >= 32) fail('LIMIT_REACHED')
+      const s = { id: randomUUID(), projectId: project?.id || '', hostId: 'local', cwd: info.cwd || project?.cwd || require('node:os').homedir(), profileId: '',
         nativeId: '', nativeIdVerified: false, mode: 'terminal', state: 'ready', revision: 0, title: input.title || info.name,
         createdAt: Date.now(), updatedAt: Date.now(), archivedAt: null, pid: null, error: null, ownership: 'external', adapter: 'terminal', tmuxTarget: input.target, tmuxIdentity: info.identity }
       this.catalog.value.sessions.push(s); this.catalog.save(); this.leases.set(s.id, owner)
+      return s
+    }
+    if (method === 'linkTerminal') {
+      keys(input, ['id','projectId'])
+      const s = this.session(input.id)
+      if (s.ownership !== 'external') fail('EXTERNAL_SESSION_REQUIRED')
+      if (input.projectId !== null && typeof input.projectId !== 'string') fail('INVALID_REQUEST')
+      const project = input.projectId ? this.catalog.find('projects',input.projectId) : null
+      s.projectId = project?.id || ''; s.updatedAt = Date.now(); this.catalog.save()
       return s
     }
     if (method === 'snapshot') {
@@ -468,6 +511,10 @@ class CodeHost {
       ].includes(method)
     )
       return this.catalog[method](input)
+    if (method === 'createSession' && this.catalog.value.profiles.find(p => p.id === input.profileId)?.adapter === 'codex') {
+      const project = this.catalog.find('projects', input.projectId)
+      return this.native.open(owner, {agent:'codex',cwd:project.cwd,profileId:input.profileId,mode:input.mode})
+    }
     if (method === 'createSession' || method === 'createSetupSession') {
       const setup = method === 'createSetupSession'
       keys(input, setup ? ['projectId', 'profileId', 'title'] : ['projectId', 'profileId', 'mode', 'title', 'model'])
@@ -586,6 +633,7 @@ class CodeHost {
     }
     this.own(owner, s.id)
     if (['stopSession', 'resumeSession', 'switchSession'].includes(method)) {
+      if (['kimi','codex'].includes(s.adapter)) return this[s.adapter].switch(owner, method, input, s)
       if (method !== 'stopSession') await this.requireSetupStopped(s.projectId)
       if (s.ownership === 'external') fail('EXTERNAL_SESSION_OWNERSHIP')
       if (method !== 'stopSession' && (s.adapter === 'terminal' || this.catalog.find('profiles', s.profileId).adapter === 'terminal')) fail('RESUME_UNSUPPORTED')

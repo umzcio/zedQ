@@ -15,6 +15,8 @@ export interface CodeHost {
   name: string
   kind: 'local' | 'ssh'
   sshAlias?: string
+  runAs?: 'login' | 'root'
+  visible?: boolean
   error?: string | null
   available: boolean
 }
@@ -33,7 +35,7 @@ export interface CodeProfile {
   name: string
   launcherFile: string
   functionName: string
-  adapter?: 'claude' | 'terminal'
+  adapter?: 'claude' | 'codex' | 'terminal'
   modes: CodeMode[]
   sharedHistoryConfirmed: boolean
   createdAt: number
@@ -49,7 +51,7 @@ export interface CodeSession {
   resolvedModel?: string
   nativeIdVerified: boolean
   ownership?: 'owned' | 'external'
-  adapter?: 'claude' | 'terminal'
+  adapter?: 'claude' | 'codex' | 'terminal' | 'kimi'
   purpose?: 'profile-setup'
   tmuxTarget?: string
   mode: CodeMode
@@ -65,12 +67,14 @@ export interface CodeSession {
 }
 export interface CodeEvent {
   seq: number
+  eventId?: string
   sessionId: string
   profileId: string
   at: number
   kind:
     | 'user'
     | 'assistant'
+    | 'thinking'
     | 'tool'
     | 'permission'
     | 'question'
@@ -104,6 +108,8 @@ export interface CodeTerminalChunk {
   attachmentId?: string
   data: string
   reset?: boolean
+  exited?: boolean
+  exitCode?: number
 }
 export type CodeProjectInput = Pick<CodeProject, 'name' | 'cwd'> &
   Partial<Pick<CodeProject, 'hostId' | 'icon' | 'color'>>
@@ -125,26 +131,45 @@ export interface CodeRepository {
   commits?: CodeCommit[]; hasMore?: boolean; lastFetch?: number | null
 }
 export interface CodePreview { id: string; projectId: string; sourceUrl: string; url: string; forwarded: boolean; state: 'ready' | 'stopped'; error?: string }
-export interface CodeExternalTerminal { target: string; name: string; attached: boolean; ownership: 'external' }
-export type CodeHostInput = { name: string; sshAlias: string }
+export interface CodeExternalTerminal { target: string; name: string; attached: boolean; ownership: 'external'; identity?: string; windows?: number; cwd?: string }
+export type CodeHostInput = { name: string; sshAlias: string; runAs?: 'login' | 'root'; visible?: boolean }
+export type CodeWorkspaceTarget = {projectId: string; sessionId?: never} | {sessionId: string; projectId?: never}
+export interface CodeFileTransfer {id:string;name:string;direction:'upload'|'download';bytes:number;total:number;state:'running'|'done'|'skipped'|'failed';error?:string}
+export interface CodeNativeSession { nativeId: string; title: string; cwd: string; updatedAt: number }
+export type CodeAgent = 'claude' | 'codex' | 'kimi'
+export interface CodeConversation extends CodeNativeSession {
+  key: string; agent: CodeAgent; hostId: string; sessionId?: string;
+  modes: CodeMode[]; profileIds: string[];
+}
 export interface CodeOperations {
+  listNativeSessions: {input: {agent?:CodeAgent} | undefined; output: {sessions: CodeConversation[]; errors: {source:string;code:string}[]; truncated:boolean}}
+  openNativeSession: {input: {agent:CodeAgent; nativeId?:string; cwd?:string; profileId?:string; mode?:CodeMode}; output:CodeSession}
+
+  listKimiSessions: {input: undefined; output: {sessions: CodeNativeSession[]; truncated: boolean}}
+  openKimiSession: {input: {nativeId: string}; output: CodeSession}
+  createKimiSession: {input: {cwd: string}; output: CodeSession}
+  uploadFiles: {input: CodeWorkspaceTarget & {path?:string}; output:{completed:number;canceled:boolean}}
+  downloadFile: {input: CodeWorkspaceTarget & {path:string}; output:{completed:number;canceled:boolean}}
+  fileTransfers: {input: CodeWorkspaceTarget; output:CodeFileTransfer[]}
   createHost: { input: CodeHostInput; output: CodeHost }
   updateHost: { input: { id: string; patch: Partial<CodeHostInput> }; output: CodeHost }
   deleteHost: { input: { id: string }; output: { ok: true } }
   discoverHosts: { input: undefined; output: { aliases: string[] } }
   connectHost: { input: { id: string }; output: CodeHost }
   disconnectHost: { input: { id: string }; output: { ok: true } }
-  listFiles: { input: { projectId: string; path?: string }; output: { entries: CodeFileEntry[]; truncated: boolean } }
-  readFile: { input: { projectId: string; path: string }; output: CodeFile }
-  writeFile: { input: { projectId: string; path: string; text: string; fingerprint: string }; output: CodeFile }
+  listFiles: { input: CodeWorkspaceTarget & { path?: string }; output: { entries: CodeFileEntry[]; truncated: boolean } }
+  readFile: { input: CodeWorkspaceTarget & { path: string }; output: CodeFile }
+  writeFile: { input: CodeWorkspaceTarget & { path: string; text: string; fingerprint: string }; output: CodeFile }
   gitRepository: { input: { projectId: string; skip?: number }; output: CodeRepository }
   gitCommit: { input: { projectId: string; hash: string }; output: { diff: string; truncated: boolean } }
   gitFetch: { input: { projectId: string; remote: string }; output: { ok: true } }
-  gitStatus: { input: { projectId: string }; output: { changes: CodeChange[]; truncated: boolean } }
-  gitDiff: { input: { projectId: string; path: string; staged?: boolean }; output: { diff: string; truncated: boolean } }
+  gitStatus: { input: CodeWorkspaceTarget; output: { changes: CodeChange[]; truncated: boolean } }
+  gitDiff: { input: CodeWorkspaceTarget & { path: string; staged?: boolean }; output: { diff: string; truncated: boolean } }
   revealFile: { input: { projectId: string; path: string }; output: { ok: true } }
   discoverTerminals: { input: { hostId: string }; output: CodeExternalTerminal[] }
-  attachExternalTerminal: { input: { projectId: string; target: string; title?: string }; output: CodeSession }
+  createTerminal: { input: { hostId: string; name: string; projectId?: string }; output: CodeSession }
+  linkTerminal: { input: { id: string; projectId: string | null }; output: CodeSession }
+  attachExternalTerminal: { input: { hostId?: string; projectId?: string; target: string; title?: string; identity?: string }; output: CodeSession }
   openPreview: { input: { projectId: string; url: string }; output: CodePreview }
   stopPreview: { input: { id: string }; output: { ok: true } }
   listPreviews: { input: undefined; output: CodePreview[] }

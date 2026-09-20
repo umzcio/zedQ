@@ -1,3 +1,5 @@
+import type {GitHubBridge} from './github-types'
+import type {ResearchBridge} from './research-types'
 import type {CodeBridge} from './code-types'
 import type {ConnectorBridge} from './connector-types'
 import type {ArtifactBridge} from './artifact-types'
@@ -14,10 +16,13 @@ export type Result<T> = {ok:true;value:T}|{ok:false;error:{code:string;message:s
 export type DesktopBridge = {
  platform:string;
  code:CodeBridge;
+ github:GitHubBridge;
  clipboard:{writeText:(text:string)=>Promise<Result<null>>};
  modules:{runtime:()=>Promise<Result<ModuleRuntime[]>>;list:()=>Promise<Result<ModuleStatus[]>>;install:()=>Promise<Result<ModuleStatus|null>>;download:(url:string)=>Promise<Result<ModuleStatus>>;rollback:(id:string)=>Promise<Result<ModuleStatus>>;recover:(id:string,version:string)=>Promise<Result<ModuleRuntime>>};
  attachments:AttachmentBridge;
  chat:ChatBridge;
+ /** Available with the native research runner; inspect availability before enabling UI. */
+ research?:ResearchBridge;
  connectors:ConnectorBridge;
  voice:VoiceBridge;
  artifacts:ArtifactBridge;

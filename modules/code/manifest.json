@@ -1,6 +1,6 @@
 {
   "id": "zq.code",
-  "version": "1.1.0",
+  "version": "1.8.2",
   "apiVersion": 1,
   "title": "Code",
   "view": "Code",
@@ -10,7 +10,23 @@
     "commands",
     "code.v1",
     "code.repository-models.v1",
+    "code.ssh-terminals.v1",
+    "code.session-files.v1",
     "clipboard",
-    "ui.tooltips.v1"
+    "ui.tooltips.v1",
+    "ui.close-tab.v1",
+    "code.kimi-native.v1",
+    "code.native-sessions.v1",
+    "code.review-links.v1",
+    "github",
+    "github.prs.v1",
+    "code.tasks.v1",
+    "ui.sidebar-sections.v1",
+    "github.issues-lifecycle.v1",
+    "github.sync-status.v1",
+    "github.issue-close.v1",
+    "github.rate-limit.v1",
+    "github.human-review.v1",
+    "ui.motion.v1"
   ]
 }

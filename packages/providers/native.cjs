@@ -285,7 +285,7 @@ function createCloudProvider(provider, { apiKey, ...transportOptions }, normaliz
       emit('\n\nSources\n\n' + sources.map(([number, url]) => `- [${number} · ${new URL(url).hostname.replace(/[\\`*_{}\[\]()<>]/g, '\\$&')}](<${url}>)`).join('\n') + '\n\n' + entries.map(([number, url]) => `[${number}]: <${url}>`).join('\n'));
     }
   }
-  return { listModels, supportsImages, supportsLocalTools, streamChat };
+  return { listModels, supportsImages, supportsLocalTools, streamChat, ...(['openai','anthropic'].includes(provider) ? { researchRequest: request => require('./research.cjs').researchRequest(provider, { apiKey, ...transportOptions }, request) } : {}) };
 }
 
 module.exports = { createCloudProvider };

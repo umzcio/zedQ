@@ -80,7 +80,7 @@
 @media(max-width:1000px){.chat-project-page{padding:26px}.project-context-grid{grid-template-columns:1fr}}
 .chat-welcome h1{font-family:inherit;font-size:25px;font-weight:450;letter-spacing:-.65px}
 .chat-composer{box-shadow:0 1px 3px #00000006;border-color:var(--line);border-radius:22px}
-.chat-project-row .project-expand-caret{position:absolute;right:8px;opacity:0;color:var(--muted);background:var(--sidebar);transition:transform 160ms ease,opacity 160ms ease}
+.chat-project-row .project-expand-caret{position:absolute;right:8px;opacity:0;color:var(--muted);background:var(--sidebar);transition:opacity 160ms ease}
 .chat-project-row:hover .project-expand-caret{background:var(--hover)}
 .chat-project-row:hover .project-expand-caret,.chat-project-row:focus-visible .project-expand-caret{opacity:1}
 .chat-project-row[aria-expanded=true] .project-expand-caret{transform:rotate(90deg)}

@@ -31,3 +31,9 @@ coverage/
 .helper-preview-test-*/
 
 .tooltip-test-*/
+
+# Local design prototypes and completed agent working notes
+/prototype/
+/modules/code/preview/
+/animation-plans/
+/.superpowers/

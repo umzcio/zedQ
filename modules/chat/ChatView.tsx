@@ -1,3 +1,8 @@
+import ResearchSources,{useResearchCatalog} from './ResearchSources'
+import ResearchCard from './ResearchCard'
+import ResearchDialog from './ResearchDialog'
+import {researchActive} from './useResearch'
+import './research.css'
 import { TooltipButton, ControlTooltip } from '@zq/ui'
 import ChatSkillActivity from './ChatSkillActivity'
 import SkillDraftHighlights from './SkillDraftHighlights'
@@ -10,6 +15,7 @@ import { Button, VoiceControls } from '@zq/ui'
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@zq/ui'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@zq/ui'
 import { useChatMotion } from './useChatMotion'
+import { useAttachmentEntry } from './useAttachmentEntry'
 import { AttachmentCard } from './AttachmentTray'
 import AttachmentPreview from './AttachmentPreview'
 import { ProjectIcon } from './ProjectIcon'
@@ -34,7 +40,7 @@ import type { ChatController } from './useChat'
 import type { Note } from '@zq/module-api'
 
 export default function ChatView({chat,notes,closing,settings,prepareNotes}:{prepareNotes:()=>Promise<void>;chat:ChatController;notes:Note[];closing:boolean;settings:()=>void}){
- const {services,openSettings}=useHost()
+ const {services,openSettings,notify}=useHost()
  const c=chat.conversation, draftId=chat.draftId
  const activeProject=chat.state.projects.find(p=>p.id===(c?c.projectId:chat.project?.id))
  const skillSelection=chat.skillChoices[draftId]===undefined?c?.skillIds??null:chat.skillChoices[draftId]
@@ -42,6 +48,11 @@ export default function ChatView({chat,notes,closing,settings,prepareNotes}:{pre
  const enabledSkills=(skillSelection??activeProject?.skillIds??[]).flatMap(id=>chat.state.skills?.find(s=>s.id===id)??[])
  const readOnly=!!(c?.archivedAt||c?.deletedAt)
  const choice=c?(c.model&&c.connectionId?{connectionId:c.connectionId,model:c.model}:null):preferredModel(chat.state.connections,chat.state.defaultModel)
+ const researchOptions=useResearchCatalog(chat,choice,activeProject?.id??null)
+ const researchDraft=chat.researchDrafts[draftId]??{mode:false,sources:[]},researchMode=researchDraft.mode
+ const researchJobs=chat.research.jobs.filter(job=>job.conversationId===c?.id),researchBusy=researchJobs.some(researchActive)
+ const researchReason=researchOptions.loading?'Checking research availability…':researchOptions.error||researchOptions.catalog?.reason||(!services.research?'Research requires an updated desktop app.':'')
+ function chooseResearch(mode:boolean){chat.setResearchDraft(draftId,{...researchDraft,mode,sources:researchDraft.sources.length?researchDraft.sources:mode&&researchOptions.catalog?.sources.some(s=>s.kind==='web')?[{kind:'web',id:'web',scope:[]}]:[]})}
  const {options:toolOptions,ready:toolsReady,error:toolError}=useToolOptions(choice)
  const selectedTools=(chat.toolChoices[draftId]??c?.messages.slice().reverse().find(m=>m.role==='user')?.tools??chat.project?.defaultTools??[]).filter(kind=>toolOptions.some(t=>t.kind===kind))
  const connection=chat.state.connections.find(x=>x.id===choice?.connectionId)
@@ -55,9 +66,12 @@ export default function ChatView({chat,notes,closing,settings,prepareNotes}:{pre
  const stopLock=useRef(false),approvalLock=useRef(false)
  const skillActions=useSkillActions(pending||closing||readOnly)
  const files=chat.files[draftId]??[],importing=chat.fileBusy[draftId]??false
+ const attachmentEntry=useAttachmentEntry(draftId,[...files.map(file=>`file:${file.id}`),...ids.map(id=>`note:${id}`)],!chat.loading&&!chat.error&&!chat.projectHome)
+ const [researchSourcesOpen,setResearchSourcesOpen]=useState(false),[researchSourceCategory,setResearchSourceCategory]=useState<'selected'|'files'>('selected')
+ async function addFiles(selection?:File[]){const added=await chat.addFiles(draftId,selection);if(researchMode&&added?.length&&activeOwner.current===draftId){setResearchSourceCategory('files');setResearchSourcesOpen(true)}}
  const [addMenu,setAddMenu]=useState(false),[dragging,setDragging]=useState(false),[preview,setPreview]=useState<{id:string;name:string;text?:string}|null>(null)
  const skillDisabled=pending||closing||importing||readOnly
- const slash=useSkillSlash({text:draft,draftId,input,skills:chat.state.skills??[],active:enabledSkills.map(skill=>skill.id),disabled:skillDisabled,onText:text=>chat.setDraft(draftId,text),onEnable:ids=>chat.setSkillChoices(draftId,ids)})
+ const slash=useSkillSlash({text:draft,draftId,input,skills:chat.state.skills??[],active:enabledSkills.map(skill=>skill.id),disabled:skillDisabled||researchMode,onText:text=>chat.setDraft(draftId,text),onEnable:ids=>chat.setSkillChoices(draftId,ids)})
  function skillSettings(page:'library'|'browse'){requestSkillSettingsPage(page);openSettings?.('skills')}
  const dragDepth=useRef(0)
  const [finding,setFinding]=useState(false),[findQuery,setFindQuery]=useState(''),[matchIndex,setMatchIndex]=useState(0),[atLatest,setAtLatest]=useState(true)
@@ -66,9 +80,9 @@ export default function ChatView({chat,notes,closing,settings,prepareNotes}:{pre
  const currentMatch=matches.length?matches[matchIndex%matches.length]:undefined
  const [contextInfo,setContextInfo]=useState<{key:string;referenceBytes:number;conversationBytes:number;error:string}|null>(null)
  const contextRequest={conversationId:c?.id,projectId:activeProject?.id??null,text:draft,noteIds:ids,attachmentIds:files.map(f=>f.id),tools:selectedTools,skillIds:skillSelection},contextKey=JSON.stringify([contextRequest,enabledSkills,c?.updatedAt,activeProject?.instructions,activeProject?.files.map(f=>f.id),notes.filter(n=>ids.includes(n.id)).map(n=>n.body)])
- useEffect(()=>{let live=true;const timer=setTimeout(()=>{void unwrap(services.chat.inspectContext(contextRequest)).then(info=>{if(live)setContextInfo({key:contextKey,...info})}).catch(e=>{if(live)setContextInfo({key:contextKey,referenceBytes:0,conversationBytes:0,error:e.message})})},300);return()=>{live=false;clearTimeout(timer)}},[contextKey])
+ useEffect(()=>{if(researchMode)return;let live=true;const timer=setTimeout(()=>{void unwrap(services.chat.inspectContext(contextRequest)).then(info=>{if(live)setContextInfo({key:contextKey,...info})}).catch(e=>{if(live)setContextInfo({key:contextKey,referenceBytes:0,conversationBytes:0,error:e.message})})},300);return()=>{live=false;clearTimeout(timer)}},[contextKey,researchMode])
  const contextError=contextInfo?.key===contextKey?contextInfo.error:''
- const empty=!c?.messages.length
+ const empty=!c?.messages.length&&!researchJobs.length
  const motion=useChatMotion(c?.id,empty,c?.messages.map(m=>m.id)??[])
 
  useEffect(()=>{setError('');setFinding(false);setFindQuery('');setMatchIndex(0);setAttaching(false);setAddMenu(false);setViewingContext(false);input.current?.focus({preventScroll:true})},[c?.id])
@@ -92,6 +106,19 @@ export default function ChatView({chat,notes,closing,settings,prepareNotes}:{pre
  }
  async function chooseConnectors(ids:string[]|null){if(lock.current||busy||waiting||skillDisabled)return;lock.current=true;setConnectorSaving(true);setError('');try{await chat.setConnectorChoices(draftId,ids)}catch(e){if(activeOwner.current===draftId)setError((e as Error).message)}finally{lock.current=false;setConnectorSaving(false)}}
  async function send(continuation=false){
+  if(researchBusy)return
+  if(researchMode&&!continuation){
+   if(lock.current||closing||readOnly||importing||!choice||!draft.trim()||researchReason||!researchDraft.sources.length||queueMode)return
+   lock.current=true;setPending(true);setError('')
+   try{
+    if(researchDraft.sources.some(s=>s.kind==='note'))await prepareNotes()
+    await chat.flushDrafts()
+    const target=c??await chat.create(choice,{cancelOnNavigation:true});if(!target)return
+    await chat.research.start({id:crypto.randomUUID(),conversationId:target.id,projectId:target.projectId??null,choice,brief:draft,sources:researchDraft.sources,...(researchDraft.previousReport?{previousReport:researchDraft.previousReport}:{})})
+    chat.setResearchDraft(target.id,{mode:researchDraft.mode,sources:researchDraft.sources});chat.setDraft(target.id,'')
+   }catch(e){if(activeOwner.current===draftId)setError((e as Error).message);else notify((e as Error).message)}finally{lock.current=false;setPending(false)}
+   return
+  }
   if(continuation&&(queueMode||draft.trim()||ids.length||files.length))return
   const messageText=continuation?'Continue the unfinished request from the partial results already obtained. Read the documents already available in this chat instead of downloading them again. Do not repeat completed actions; verify uncertain actions before retrying. Summarize what you can establish and clearly identify anything still missing.':draft
   if(lock.current||slash.blockBareSlash||contextError||readOnly||closing||importing||!toolsReady||toolError||(!messageText.trim()&&!ids.length&&!files.length)||!choice)return
@@ -112,7 +139,7 @@ export default function ChatView({chat,notes,closing,settings,prepareNotes}:{pre
  if(chat.error)return <div className="empty-state" role="alert"><p>{chat.error}</p><p>Your Notes and Tasks are still available.</p></div>
  if(chat.projectHome&&chat.project)return <ChatProjectView key={chat.project.id} chat={chat} closing={closing}/>
 
- return <div className={`chat-view ${empty?'chat-is-empty':''}`} onKeyDown={e=>{if((e.metaKey||e.ctrlKey)&&e.key==='f'&&!empty){e.preventDefault();setFinding(true);findInput.current?.focus()}if(e.key==='Escape'&&finding){e.preventDefault();setFinding(false);input.current?.focus()}}} onDragEnter={e=>{if(e.dataTransfer.types.includes('Files')){e.preventDefault();dragDepth.current++;setDragging(true)}}} onDragOver={e=>{if(e.dataTransfer.types.includes('Files')){e.preventDefault();e.dataTransfer.dropEffect=closing||pending||importing?'none':'copy'}}} onDragLeave={e=>{e.preventDefault();if(--dragDepth.current<=0){dragDepth.current=0;setDragging(false)}}} onDrop={e=>{e.preventDefault();dragDepth.current=0;setDragging(false);if(!closing&&!pending&&!importing&&e.dataTransfer.files.length)void chat.addFiles(draftId,Array.from(e.dataTransfer.files))}}>
+ return <div className={`chat-view ${empty?'chat-is-empty':''}`} onKeyDown={e=>{if((e.metaKey||e.ctrlKey)&&e.key==='f'&&!empty){e.preventDefault();setFinding(true);findInput.current?.focus()}if(e.key==='Escape'&&finding){e.preventDefault();setFinding(false);input.current?.focus()}}} onDragEnter={e=>{if(e.dataTransfer.types.includes('Files')){e.preventDefault();dragDepth.current++;setDragging(true)}}} onDragOver={e=>{if(e.dataTransfer.types.includes('Files')){e.preventDefault();e.dataTransfer.dropEffect=closing||pending||importing?'none':'copy'}}} onDragLeave={e=>{e.preventDefault();if(--dragDepth.current<=0){dragDepth.current=0;setDragging(false)}}} onDrop={e=>{e.preventDefault();dragDepth.current=0;setDragging(false);if(!closing&&!pending&&!importing&&e.dataTransfer.files.length)void addFiles(Array.from(e.dataTransfer.files))}}>
   {readOnly&&<div className="chat-restoration"><span>{c?.deletedAt?'This chat is in Trash.':'This chat is archived.'}</span><Button tooltip="Move this chat back to active chats so you can continue the conversation" variant="ghost" size="sm" onClick={()=>void chat.updateConversation({id:c!.id,deleted:false,archived:false}).catch(e=>setError(e.message))}>Restore chat</Button></div>}
   {activeProject&&<TooltipButton tooltip={`Open ${activeProject.name} project instructions, files, and chats`} className="chat-project-link" onClick={()=>chat.openProject(activeProject.id)}><ProjectIcon project={activeProject} size={16}/>{activeProject.name}</TooltipButton>}
   {dragging&&<div className="attachment-drop-overlay"><UploadSimple size={30}/><strong>Drop files into this chat</strong><span>Images, PDFs, and text files</span></div>}
@@ -130,40 +157,46 @@ export default function ChatView({chat,notes,closing,settings,prepareNotes}:{pre
     {m.interactions?.map(interaction=><ChatInteraction key={`${c!.id}:${interaction.id}`} interaction={interaction} conversationId={c!.id} disabled={closing||readOnly}/>)}
     {m.role==='assistant'&&m.status==='error'&&<div className="chat-response-error" role="alert"><WarningCircle size={18} aria-hidden="true"/><div><strong>Response incomplete</strong><p>{m.error||'The response stopped before it finished.'}</p>{(m.content||m.toolActivity?.length)&&<p className="chat-response-error-hint">The content above is partial. Completed tool steps do not mean the whole request finished.</p>}{m.id===c!.messages.at(-1)?.id&&<Button variant="outline" size="sm" tooltip={draft.trim()||ids.length||files.length?'Send or clear your draft before continuing':queueMode?'Finish or remove queued messages before continuing':'Continue from the partial results and documents already obtained'} disabled={queueMode||!!draft.trim()||!!ids.length||!!files.length||pending||closing||readOnly||importing||!toolsReady||!!toolError||!!contextError||!choice||connectorSaving} onClick={()=>void send(true)}>Continue response</Button>}</div></div>}
     {m.error&&m.role!=='assistant'&&<p className="chat-error" role="alert">{m.error}</p>}
-   </ChatMessageActions>)}</div>
+   </ChatMessageActions>)}{researchJobs.map(job=><ResearchCard key={job.id} job={job} research={chat.research} compact={job.status==='completed'}/>)}</div>
   </div>}
   <div className="chat-compose-region">
    {!empty&&!atLatest&&<div className="chat-jump-latest"><TooltipButton tooltip="Scroll to the newest message and follow new responses" type="button" onClick={latest}><ArrowDown size={13}/>Jump to latest</TooltipButton></div>}
    {empty&&<div className="chat-welcome"><h1>What’s on your mind, zach?</h1></div>}
    <div className="chat-composer-area" ref={motion.composer}>
     {(error||chat.state.error||chat.recoveryError)&&<p className="chat-error" role="alert">{error||chat.state.error||chat.recoveryError}</p>}
-    {contextError&&<p className="chat-context-limit" role="alert">{contextError}</p>}
-    {c&&<ChatQueue key={c.id} conversation={c} disabled={pending||closing||readOnly} waiting={waiting}/>}
+    {!researchMode&&contextError&&<p className="chat-context-limit" role="alert">{contextError}</p>}
+    {c&&!researchMode&&<ChatQueue key={c.id} conversation={c} disabled={pending||closing||readOnly} waiting={waiting}/>}
+    {chat.research.error&&<p role="alert" className="research-error">{chat.research.error} <Button type="button" variant="ghost" onClick={()=>void chat.research.retry().catch(e=>setError(e.message))}>Retry research storage</Button></p>}
+    {researchBusy&&<p className="research-hint" role="status">Research is active in this chat. You can use other chats while it runs.</p>}
+    {researchMode&&researchDraft.previousReport&&<p className="research-hint">Following up on a saved report. This will create a new version. <Button type="button" variant="ghost" size="sm" disabled={pending||researchBusy} onClick={()=>{const {previousReport,...rest}=researchDraft;chat.setResearchDraft(draftId,rest)}}>Start a separate report</Button></p>}
+    {researchMode&&researchReason&&!researchOptions.loading&&<p className="research-hint" role="status">{researchReason}</p>}
     <form className="chat-composer" onSubmit={e=>{e.preventDefault();void send()}}>
-     {(ids.length>0||files.length>0)&&<div className="attachment-tray">{files.map(a=><AttachmentCard key={a.id} item={a} disabled={pending||closing||importing} onPreview={()=>setPreview({id:a.id,name:a.name})} onRemove={()=>chat.removeFile(draftId,a.id)}/>)}{ids.map(id=>{const note=notes.find(n=>n.id===id);return <AttachmentCard key={id} item={{id,name:note?.title||'Untitled',kind:'note',size:0,preview:''}} disabled={pending||closing||importing} onPreview={()=>setPreview({id,name:note?.title||'Untitled',text:note?.body??''})} onRemove={()=>chat.setAttachments(draftId,ids.filter(x=>x!==id))}/>})}</div>}
+     {!researchMode&&(ids.length>0||files.length>0)&&<div className="attachment-tray">{files.map(a=><AttachmentCard key={`file:${a.id}`} item={a} animateEntry={attachmentEntry.entering.has(`file:${a.id}`)} onEntryComplete={()=>attachmentEntry.consume(`file:${a.id}`)} disabled={pending||closing||importing} onPreview={()=>setPreview({id:a.id,name:a.name})} onRemove={()=>chat.removeFile(draftId,a.id)}/>)}{ids.map(id=>{const note=notes.find(n=>n.id===id);return <AttachmentCard key={`note:${id}`} item={{id,name:note?.title||'Untitled',kind:'note',size:0,preview:''}} animateEntry={attachmentEntry.entering.has(`note:${id}`)} onEntryComplete={()=>attachmentEntry.consume(`note:${id}`)} disabled={pending||closing||importing} onPreview={()=>setPreview({id,name:note?.title||'Untitled',text:note?.body??''})} onRemove={()=>chat.setAttachments(draftId,ids.filter(x=>x!==id))}/>})}</div>}
      {importing&&<div className="attachment-preparing" role="status"><span/>Preparing attachments…</div>}
      {chat.fileError[draftId]&&<p className="attachment-file-error" role="alert">{chat.fileError[draftId]}</p>}
      <SkillSlashMenu slash={slash} active={enabledSkills.map(skill=>skill.id)} disabled={skillDisabled} onAction={(action,skill)=>{input.current?.focus();void skillActions.act(action,skill)}}/>
      {slash.status&&<span className="skill-picker-status" role="status">{slash.status}</span>}
      <div className={`skill-draft-editor${slash.ranges.length?' has-skill-commands':''}`}>
      {slash.ranges.length>0&&<SkillDraftHighlights text={draft} ranges={slash.ranges} input={input}/>}
-     <textarea aria-autocomplete="list" aria-controls={slash.open?slash.listId:undefined} aria-expanded={slash.open} aria-activedescendant={slash.activeDescendant} onFocus={e=>{slash.setFocused(true);slash.setCaret(e.currentTarget.selectionStart)}} onBlur={e=>{if(!(e.relatedTarget instanceof Element)||!e.relatedTarget.closest('.skill-slash-menu,[role=menu]'))slash.setFocused(false)}} onSelect={e=>slash.setCaret(e.currentTarget.selectionStart)} onPaste={e=>{const pasted=Array.from(e.clipboardData.files);if(pasted.length){e.preventDefault();if(!closing&&!pending&&!importing)void chat.addFiles(draftId,pasted)}}} ref={input} aria-label="Chat message" placeholder="How can I help?" value={draft} disabled={pending||closing||readOnly} onChange={e=>slash.edit(e.target.value,e.target.selectionStart)} onKeyDown={e=>{if(slash.keyDown(e))return;if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send()}}}/>
+     <textarea aria-autocomplete="list" aria-controls={slash.open?slash.listId:undefined} aria-expanded={slash.open} aria-activedescendant={slash.activeDescendant} onFocus={e=>{slash.setFocused(true);slash.setCaret(e.currentTarget.selectionStart)}} onBlur={e=>{if(!(e.relatedTarget instanceof Element)||!e.relatedTarget.closest('.skill-slash-menu,[role=menu]'))slash.setFocused(false)}} onSelect={e=>slash.setCaret(e.currentTarget.selectionStart)} onPaste={e=>{const pasted=Array.from(e.clipboardData.files);if(pasted.length){e.preventDefault();if(!closing&&!pending&&!importing)void addFiles(pasted)}}} ref={input} aria-label="Chat message" placeholder={researchMode?'What would you like to research?':'How can I help?'} value={draft} disabled={pending||closing||readOnly} onChange={e=>slash.edit(e.target.value,e.target.selectionStart)} onKeyDown={e=>{if(slash.keyDown(e))return;if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send()}}}/>
      </div>
      <div className="composer-actions">
-      <ComposerAddMenu connectorProps={{connectors:chat.connectors,selected:connectorSelection,inherited:activeProject?.connectorIds??[],disabled:skillDisabled||busy||waiting||connectorSaving||chat.connectorsLoading,onChange:ids=>void chooseConnectors(ids),onManage:()=>{setAddMenu(false);openSettings?.('connectors')}}} open={addMenu} onOpenChange={setAddMenu} approvalMode={c?.approvalMode??'auto'} approvalDisabled={busy||waiting||pending||closing||readOnly||approvalPending} onApprovalMode={mode=>void approvalMode(mode)} disabled={pending||closing||importing||readOnly} skillDisabled={skillDisabled} skills={chat.state.skills??[]} selected={skillSelection} inherited={activeProject?.skillIds??[]} inheritedConfigured={Array.isArray(activeProject?.skillIds)} onChange={ids=>chat.setSkillChoices(draftId,ids)} onUpload={()=>void chat.addFiles(draftId)} onNotes={()=>{setNoteQuery('');setAttaching(true)}} onContext={()=>setViewingContext(true)} onManage={()=>skillSettings('library')} onBrowse={()=>skillSettings('browse')} onSkillAction={(action,skill)=>{input.current?.focus();void skillActions.act(action,skill)}}/>
-      <ChatToolPicker options={toolOptions} selected={selectedTools} onChange={tools=>chat.setToolChoices(draftId,tools)} disabled={pending||closing||importing}/>
-
+      <ComposerAddMenu research={researchMode} connectorProps={{connectors:chat.connectors,selected:connectorSelection,inherited:activeProject?.connectorIds??[],disabled:skillDisabled||busy||waiting||connectorSaving||chat.connectorsLoading,onChange:ids=>void chooseConnectors(ids),onManage:()=>{setAddMenu(false);openSettings?.('connectors')}}} open={addMenu} onOpenChange={setAddMenu} approvalMode={c?.approvalMode??'auto'} approvalDisabled={busy||waiting||pending||closing||readOnly||approvalPending} onApprovalMode={mode=>void approvalMode(mode)} disabled={pending||closing||importing||readOnly||researchBusy} skillDisabled={skillDisabled} skills={chat.state.skills??[]} selected={skillSelection} inherited={activeProject?.skillIds??[]} inheritedConfigured={Array.isArray(activeProject?.skillIds)} onChange={ids=>chat.setSkillChoices(draftId,ids)} onUpload={()=>void addFiles()} onNotes={()=>{setNoteQuery('');setAttaching(true)}} onContext={()=>setViewingContext(true)} onManage={()=>skillSettings('library')} onBrowse={()=>skillSettings('browse')} onSkillAction={(action,skill)=>{input.current?.focus();void skillActions.act(action,skill)}}/>
+      <ChatToolPicker options={toolOptions} selected={selectedTools} onChange={tools=>chat.setToolChoices(draftId,tools)} disabled={pending||closing||importing||readOnly} research={services.research?{active:researchMode,onChange:chooseResearch,reason:researchReason,disabled:researchBusy}:undefined}/>
+      {researchMode&&<ResearchSources initialCategory={researchSourceCategory} open={researchSourcesOpen} onOpenChange={open=>{setResearchSourcesOpen(open);if(!open)setResearchSourceCategory('selected')}} chat={chat} catalog={researchOptions.catalog} value={researchDraft} onChange={value=>chat.setResearchDraft(draftId,value)} disabled={pending||closing||importing||researchBusy}/>}
       <div className="composer-model">
-       <ModelPicker state={chat.state} choice={choice} disabled={busy||pending||closing||importing} settings={settings} onPick={configure} onPicked={()=>input.current?.focus({preventScroll:true})}/>
+       <ModelPicker state={chat.state} choice={choice} disabled={busy||researchBusy||pending||closing||importing} settings={settings} onPick={configure} onPicked={()=>input.current?.focus({preventScroll:true})}/>
       </div>
       <VoiceControls controller={chat.voiceRecorder} originId={draftId} disabled={pending||closing||readOnly} onTranscript={chat.receiveTranscript}/>
       {busy&&<TooltipButton type="button" className="chat-stop" aria-label="Stop response" tooltip={stopping ? 'Stopping the response…' : 'Stop generating this response'} disabled={closing||stopping} onClick={()=>void stop()}><Stop size={15} weight="fill"/></TooltipButton>}
-      <TooltipButton className={`chat-send${queueMode?' chat-enqueue':''}`} type="submit" tooltip={readOnly ? 'Restore this chat to send messages' : !connection || !choice ? 'Choose a connected model to send a message' : importing ? 'Wait for attachments to finish preparing' : contextError || toolError || (slash.blockBareSlash ? 'Choose a skill or continue typing your message' : pending ? 'Sending message…' : !toolsReady ? 'Loading tools for this model…' : !draft.trim() && !ids.length && !files.length ? 'Write a message or attach context to send' : queueMode ? 'Add this message to the queue to send in order' : 'Send message (Enter); add a new line with Shift+Enter')} disabled={connectorSaving||slash.blockBareSlash||!!contextError||readOnly||pending||closing||importing||!toolsReady||!!toolError||(!draft.trim()&&!ids.length&&!files.length)||!connection||!choice} aria-label={queueMode?'Queue message':'Send message'}><span key={queueMode?'queue':'send'} className="chat-send-glyph animate-in fade-in-0 zoom-in-95">{queueMode?<ListPlus size={19}/>:<ArrowUp size={19} weight="bold"/>}</span></TooltipButton>
+      {researchMode?<TooltipButton className="chat-send" type="submit" aria-label="Prepare research plan" tooltip={researchReason||'Prepare a plan for review before researching'} disabled={researchBusy||pending||closing||importing||readOnly||queueMode||!choice||!draft.trim()||!researchDraft.sources.length||!!researchReason}><ArrowUp size={19}/></TooltipButton>:
+      <TooltipButton className={`chat-send${queueMode?' chat-enqueue':''}`} type="submit" tooltip={readOnly ? 'Restore this chat to send messages' : !connection || !choice ? 'Choose a connected model to send a message' : importing ? 'Wait for attachments to finish preparing' : contextError || toolError || (slash.blockBareSlash ? 'Choose a skill or continue typing your message' : pending ? 'Sending message…' : !toolsReady ? 'Loading tools for this model…' : !draft.trim() && !ids.length && !files.length ? 'Write a message or attach context to send' : queueMode ? 'Add this message to the queue to send in order' : 'Send message (Enter); add a new line with Shift+Enter')} disabled={researchBusy||connectorSaving||slash.blockBareSlash||!!contextError||readOnly||pending||closing||importing||!toolsReady||!!toolError||(!draft.trim()&&!ids.length&&!files.length)||!connection||!choice} aria-label={queueMode?'Queue message':'Send message'}><span key={queueMode?'queue':'send'} className="chat-send-glyph animate-in fade-in-0 zoom-in-95">{queueMode?<ListPlus size={19}/>:<ArrowUp size={19} weight="bold"/>}</span></TooltipButton>}
      </div>
     </form>
     {!chat.state.connections.length&&<TooltipButton tooltip="Open provider settings to connect a chat model" className="chat-setup-link" onClick={settings}>Connect a model to start chatting</TooltipButton>}
    </div>
   </div>
+  <ResearchDialog research={chat.research}/>
   <Dialog open={viewingContext&&!closing} onOpenChange={setViewingContext}><DialogContent inert={closing} className="chat-context-dialog" onCloseAutoFocus={e=>{e.preventDefault();input.current?.focus({preventScroll:true})}}><DialogTitle>Message context</DialogTitle><DialogDescription>The conversation and these references are included with your next message.</DialogDescription>
    {activeProject&&<p className="chat-context-project">{activeProject.name}</p>}
    {activeProject?.instructions&&<section><h3>Project instructions</h3><pre>{activeProject.instructions}</pre></section>}

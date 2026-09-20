@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { codeError } from "./errors";
 import {
   Button,
@@ -45,7 +45,7 @@ import {
 
 export type Action = {
   label: string;
-  run: () => void;
+  run: (activation?: import("./TransferCompletion").TransferActivation) => void;
   disabled?: boolean;
   danger?: boolean;
 };
@@ -56,15 +56,17 @@ export function ItemMenu({
   actions: Action[];
   children: ReactNode;
 }) {
+  const activation=useRef<import("./TransferCompletion").TransferActivation>("unknown");
   return (
-    <ContextMenu>
+    <ContextMenu onOpenChange={()=>{activation.current="unknown"}}>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-      <ContextMenuContent>
+      <ContextMenuContent onKeyDownCapture={()=>{activation.current="keyboard"}}>
         {actions.map((action) => (
           <ContextMenuItem
             key={action.label}
             disabled={action.disabled}
-            onSelect={action.run}
+            onClickCapture={event=>{activation.current=event.detail>0?"pointer":"keyboard"}}
+            onSelect={()=>{const source=activation.current;activation.current="unknown";action.run(source)}}
             className={action.danger ? "code-danger" : ""}
           >
             {action.label}
@@ -77,23 +79,27 @@ export function ItemMenu({
 export function MoreMenu({
   actions,
   label,
+  trigger,
 }: {
   actions: Action[];
   label: string;
+  trigger?: ReactNode;
 }) {
+  const activation=useRef<import("./TransferCompletion").TransferActivation>("unknown");
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={()=>{activation.current="unknown"}}>
       <DropdownMenuTrigger asChild>
-        <TooltipButton aria-label={label} className="code-more">
+        {trigger || <TooltipButton aria-label={label} className="code-more">
           <DotsThree size={20} />
-        </TooltipButton>
+        </TooltipButton>}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align={trigger ? "start" : "end"} onKeyDownCapture={()=>{activation.current="keyboard"}}>
         {actions.map((action) => (
           <DropdownMenuItem
             key={action.label}
             disabled={action.disabled}
-            onSelect={action.run}
+            onClickCapture={event=>{activation.current=event.detail>0?"pointer":"keyboard"}}
+            onSelect={()=>{const source=activation.current;activation.current="unknown";action.run(source)}}
             className={action.danger ? "code-danger" : ""}
           >
             {action.label}
@@ -136,7 +142,7 @@ export function ProjectIcon({
   );
 }
 export type Management =
-  | { kind: "project"; item?: CodeProject; iconOnly?: boolean }
+  | { kind: "project"; item?: CodeProject; iconOnly?: boolean; hostId?: string }
   | { kind: "profile"; item?: CodeProfile }
   | { kind: "profiles" }
   | { kind: "rename"; id: string; title: string }
@@ -385,7 +391,7 @@ function EditForm({
   const bridge = useHost().services.code,
     item = dialog.item,
     [name, setName] = useState(item?.name || ""),
-    [hostId, setHostId] = useState(item?.hostId || "local"),
+    [hostId, setHostId] = useState(item?.hostId || (dialog.kind === "project" ? dialog.hostId : undefined) || "local"),
     [cwd, setCwd] = useState(
       dialog.kind === "project" ? dialog.item?.cwd || "" : "",
     ),
@@ -410,7 +416,7 @@ function EditForm({
         ? (dialog.item?.sharedHistoryConfirmed ?? true)
         : true,
     ),
-    [adapter, setAdapter] = useState<"claude" | "terminal">(
+    [adapter, setAdapter] = useState<"claude" | "codex" | "terminal">(
       dialog.kind === "profile" ? dialog.item?.adapter || "claude" : "claude",
     ),
     [busy, setBusy] = useState(false),
@@ -446,7 +452,7 @@ function EditForm({
           modes: (adapter === "terminal"
             ? ["terminal"]
             : ["chat", "terminal"]) as ("chat" | "terminal")[],
-          sharedHistoryConfirmed: adapter === "claude" && shared,
+          sharedHistoryConfirmed: adapter !== "terminal" && shared,
         };
         if (item) await bridge.invoke("updateProfile", { id: item.id, patch });
         else await bridge.invoke("createProfile", patch);
@@ -487,7 +493,7 @@ function EditForm({
                 onValueChange={setHostId}
                 options={snapshot.hosts.map((host) => ({
                   value: host.id,
-                  label: host.name,
+                  label: host.kind === "ssh" ? `${host.name} · ${host.runAs === "root" ? "root" : "SSH login user"}` : host.name,
                 }))}
               />
             </label>
@@ -528,10 +534,11 @@ function EditForm({
                   label="Agent type"
                   value={adapter}
                   onValueChange={(value) =>
-                    setAdapter(value as "claude" | "terminal")
+                    setAdapter(value as "claude" | "codex" | "terminal")
                   }
                   options={[
                     { value: "claude", label: "Claude · Chat and Terminal" },
+                    { value: "codex", label: "Codex · Chat and Terminal" },
                     { value: "terminal", label: "Other CLI · Terminal only" },
                   ]}
                 />
@@ -555,7 +562,7 @@ function EditForm({
                   pattern="[A-Za-z_][A-Za-z0-9_-]*"
                 />
               </label>
-              {adapter === "claude" && (
+              {adapter !== "terminal" && (
                 <label className="code-check">
                   <input
                     type="checkbox"

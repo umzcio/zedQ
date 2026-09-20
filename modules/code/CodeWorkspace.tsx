@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useHost,
   type CodeProject,
   type CodeFile,
-  type CodeFileEntry,
+  type CodeSession,
+  type CodeWorkspaceTarget,
   type CodeChange,
   type CodePreview,
 } from "@zq/module-api";
@@ -18,29 +19,32 @@ import {
 } from "@zq/ui";
 import {
   ArrowClockwise,
-  ArrowLeft,
-  FolderSimple,
-  File,
+  UploadSimple,
   ArrowSquareOut,
   X,
 } from "@phosphor-icons/react";
 import { ItemMenu, MoreMenu, type Action } from "./CodeManagement";
 
+import { CodeFileTree } from "./CodeFileTree";
 import { CodeRepository } from "./CodeRepository";
+import { TransferCompletion, type TransferActivation } from "./TransferCompletion";
+import { useWorkspaceTransfers } from "./useWorkspaceTransfers";
 import { codeError } from "./errors";
 type Tab = "repository" | "files" | "changes" | "preview";
 export function CodeWorkspace({
   project,
+  session,
   onClose,
 }: {
-  project: CodeProject;
+  project?: CodeProject;
+  session?: CodeSession;
   onClose: () => void;
 }) {
+  const resource = project || {id:`session:${session!.id}`,name:session!.title,cwd:session!.cwd,hostId:session!.hostId};
+  const target = useMemo<CodeWorkspaceTarget>(() => project ? {projectId:project.id} : {sessionId:session!.id}, [project?.id,session?.id]);
   const host = useHost(),
     bridge = host.services.code,
-    [tab, setTab] = useState<Tab>("repository"),
-    [folder, setFolder] = useState(""),
-    [entries, setEntries] = useState<CodeFileEntry[]>([]),
+    [tab, setTab] = useState<Tab>("files"),
     [changes, setChanges] = useState<CodeChange[]>([]),
     [file, setFile] = useState<CodeFile | null>(null),
     [text, setText] = useState(""),
@@ -58,27 +62,25 @@ export function CodeWorkspace({
     [url, setUrl] = useState("http://localhost:3000"),
     [frame, setFrame] = useState<CodePreview | null>(null),
     [reload, setReload] = useState(0);
-  const request = useRef(0),
+  const request = useRef(0), fileRequest=useRef(0),
     dirty = !!file && text !== file.text;
   const copy = (value: string) => void host.services.clipboard.writeText(value);
   const fail = (err: unknown) => setError(codeError(err));
+  const {transfers,transferring,completion,consume,transfer}=useWorkspaceTransfers(bridge,target,host.workspace.layout.view==='Code',()=>setReload(value=>value+1),fail);
+  const transferActive=transferring||transfers.some(t=>t.state==='running');
+  useEffect(()=>()=>{fileRequest.current++},[target]);
+  const upload=(path='',activation:TransferActivation='unknown')=>{setError('');void transfer('upload',path,activation)};
+  const download=(path:string,activation:TransferActivation='unknown')=>{setError('');void transfer('download',path,activation)};
   async function refresh() {
     const token = ++request.current;
     setError("");
     try {
       if (tab === "repository") { setReload(value => value + 1); }
       else if (tab === "files") {
-        const result = await bridge.invoke("listFiles", {
-          projectId: project.id,
-          path: folder,
-        });
-        if (token === request.current) {
-          setEntries(result.entries);
-          setTruncated(result.truncated);
-        }
+        setReload(value => value + 1);
       } else if (tab === "changes") {
         const result = await bridge.invoke("gitStatus", {
-          projectId: project.id,
+          ...target,
         });
         if (token === request.current) {
           setChanges(result.changes);
@@ -87,7 +89,7 @@ export function CodeWorkspace({
       } else if (tab === "preview")
         setPreviews(
           (await bridge.invoke("listPreviews", undefined)).filter(
-            (p) => p.projectId === project.id && p.state === "ready",
+            (p) => p.projectId === resource.id && p.state === "ready",
           ),
         );
     } catch (err) {
@@ -99,22 +101,24 @@ export function CodeWorkspace({
     return () => {
       request.current++;
     };
-  }, [project.id, tab, folder]);
+  }, [resource.id, tab]);
   function guard(action: () => void, discardDraft = false) {
     setDiscardDraft(discardDraft);
     if (dirty) setDiscard(() => action);
     else action();
   }
   async function openFile(path: string) {
+    const token=++fileRequest.current;
     setBusy(true);
     setError("");
     try {
       const result = await bridge.invoke("readFile", {
-        projectId: project.id,
+        ...target,
         path,
       });
+      if(token!==fileRequest.current)return;
       const saved = sessionStorage.getItem(
-        `zq.code.draft.${project.id}.${path}`,
+        `zq.code.draft.${resource.id}.${path}`,
       );
       setFile(result);
       setText(result.text);
@@ -140,14 +144,14 @@ export function CodeWorkspace({
       }
       setDiff(null);
     } catch (err) {
-      fail(err);
+      if(token===fileRequest.current)fail(err);
     } finally {
-      setBusy(false);
+      if(token===fileRequest.current)setBusy(false);
     }
   }
   useEffect(() => {
     if (!file) return;
-    const key = `zq.code.draft.${project.id}.${file.path}`;
+    const key = `zq.code.draft.${resource.id}.${file.path}`;
     if (dirty)
       sessionStorage.setItem(
         key,
@@ -158,14 +162,14 @@ export function CodeWorkspace({
         }),
       );
     else sessionStorage.removeItem(key);
-  }, [file, text, dirty, project.id]);
+  }, [file, text, dirty, resource.id]);
   async function save() {
     if (!file || !dirty) return true;
     setBusy(true);
     setError("");
     try {
       const result = await bridge.invoke("writeFile", {
-        projectId: project.id,
+        ...target,
         path: file.path,
         text,
         fingerprint: file.fingerprint,
@@ -186,7 +190,7 @@ export function CodeWorkspace({
     setError("");
     try {
       const result = await bridge.invoke("gitDiff", {
-        projectId: project.id,
+        ...target,
         path,
         staged,
       });
@@ -200,29 +204,6 @@ export function CodeWorkspace({
     } finally {
       setBusy(false);
     }
-  }
-  function fileActions(entry: CodeFileEntry): Action[] {
-    return [
-      {
-        label: entry.kind === "directory" ? "Open folder" : "Open file",
-        disabled: entry.kind === "symlink",
-        run: () =>
-          guard(() =>
-            entry.kind === "directory"
-              ? setFolder(entry.path)
-              : void openFile(entry.path),
-          ),
-      },
-      { label: "Copy relative path", run: () => copy(entry.path) },
-      {
-        label: "Reveal in Finder",
-        disabled: project.hostId !== "local",
-        run: () =>
-          void bridge
-            .invoke("revealFile", { projectId: project.id, path: entry.path })
-            .catch(fail),
-      },
-    ];
   }
   function changeActions(change: CodeChange): Action[] {
     return [
@@ -240,6 +221,7 @@ export function CodeWorkspace({
             void openFile(change.path);
           }),
       },
+      { label: "Download…", disabled:transferActive, run:activation=>download(change.path,activation) },
       { label: "Copy relative path", run: () => copy(change.path) },
     ];
   }
@@ -247,8 +229,9 @@ export function CodeWorkspace({
     setBusy(true);
     setError("");
     try {
+      if (!project) return;
       const result = await bridge.invoke("openPreview", {
-        projectId: project.id,
+        projectId:project.id,
         url,
       });
       setFrame(result);
@@ -286,14 +269,14 @@ export function CodeWorkspace({
     },
   ];
   return (
-    <aside className="code-inspector" aria-label="Project workspace">
+    <aside className="code-inspector" aria-label="File workspace">
       <div className="code-inspector-tabs">
-        {(["repository", "files", "changes", "preview"] as const).map((value) => (
+        {(project ? ["files", "changes", "repository", "preview"] as const : ["files", "changes"] as const).map((value) => (
           <ItemMenu
             key={value}
             actions={[
               { label: "Refresh", run: () => void refresh() },
-              { label: "Close workspace panel", run: onClose },
+              { label: "Close workspace panel", run: () => guard(onClose) },
             ]}
           >
             <button aria-pressed={tab === value} onClick={() => setTab(value)}>
@@ -311,7 +294,7 @@ export function CodeWorkspace({
         >
           <ArrowClockwise size={15} />
         </TooltipButton>
-        <TooltipButton aria-label="Close workspace panel" onClick={onClose}>
+        <TooltipButton aria-label="Close workspace panel" onClick={() => guard(onClose)}>
           <X size={15} />
         </TooltipButton>
       </div>
@@ -320,56 +303,25 @@ export function CodeWorkspace({
           {error}
         </p>
       )}
-      {tab === "repository" && <CodeRepository key={`${project.id}-${reload}`} project={project} />}
+      {!!transfers.length && <div className="code-transfers" aria-label="File transfers" aria-live="polite">
+        {transfers.slice(-3).map(item=><ItemMenu key={item.id} actions={[{label:'Copy file name',run:()=>copy(item.name)}]}>
+          <div className={`code-transfer ${item.state}`}>
+            <span title={item.name}>{item.direction==='upload'?'Upload':'Download'} · {item.name}</span>
+            <small className="code-transfer-status"><TransferCompletion done={item.state==='done'} enter={completion===item.id} consume={consume}/>{item.state==='running'?`${item.total?Math.floor(item.bytes/item.total*100):0}%`:item.state==='done'?'Complete':item.state==='skipped'?'Skipped':'Failed'}</small>
+            {item.state==='running'&&<progress aria-label={`Transferring ${item.name}`} value={item.bytes} max={item.total||1}/>}
+            {item.error&&<p>{codeError(item.error)}</p>}
+          </div>
+        </ItemMenu>)}
+      </div>}
+      {tab === "repository" && project && <CodeRepository key={`${resource.id}-${reload}`} project={project} />}
       {tab === "files" && (
         <>
-          <div className="code-file-path">
-            <button
-              disabled={!folder}
-              onClick={() =>
-                setFolder(folder.split("/").slice(0, -1).join("/"))
-              }
-              aria-label="Parent folder"
-            >
-              <ArrowLeft size={15} />
-            </button>
-            <span>{folder || project.name}</span>
+          <div className="code-file-path" title={resource.cwd}><span>{resource.cwd}</span>
+            <TooltipButton aria-label="Upload files" disabled={transferActive} onClick={event=>upload('',event.detail>0?'pointer':'keyboard')}><UploadSimple size={16}/></TooltipButton>
+            <MoreMenu label="Folder actions" actions={[{label:'Upload files…',disabled:transferActive,run:activation=>upload('',activation)},{label:'Copy folder path',run:()=>copy(resource.cwd)},{label:'Refresh files',run:()=>void refresh()}]}/>
           </div>
           <div className={`code-file-list ${file ? "with-editor" : ""}`}>
-            {entries.map((entry) => (
-              <ItemMenu key={entry.path} actions={fileActions(entry)}>
-                <div className="code-file-row">
-                  <button
-                    disabled={entry.kind === "symlink" || busy}
-                    onClick={() =>
-                      guard(() =>
-                        entry.kind === "directory"
-                          ? setFolder(entry.path)
-                          : void openFile(entry.path),
-                      )
-                    }
-                  >
-                    {entry.kind === "directory" ? (
-                      <FolderSimple size={16} />
-                    ) : (
-                      <File size={16} />
-                    )}
-                    <span>{entry.name}</span>
-                    {entry.kind === "symlink" && <small>symlink</small>}
-                  </button>
-                  <MoreMenu
-                    label={`Actions for ${entry.name}`}
-                    actions={fileActions(entry)}
-                  />
-                </div>
-              </ItemMenu>
-            ))}
-            {!entries.length && (
-              <p className="code-muted">This folder is empty.</p>
-            )}
-            {truncated && (
-              <p className="code-muted">Folder listing is truncated.</p>
-            )}
+            <CodeFileTree target={target} rootPath={resource.cwd} local={resource.hostId==='local'} reload={reload} selected={file?.path} onOpen={path=>guard(()=>void openFile(path))} onUpload={upload} onDownload={download} transferring={transferActive}/>
           </div>
           {file && (
             <div className="code-editor">
@@ -386,13 +338,14 @@ export function CodeWorkspace({
                       disabled: !dirty || busy,
                       run: () => void save(),
                     },
+                    { label: "Download…", disabled:transferActive, run:activation=>download(file.path,activation) },
                     { label: "Copy contents", run: () => copy(text) },
                     {
                       label: "Reload from disk",
                       run: () =>
                         guard(() => {
                           sessionStorage.removeItem(
-                            `zq.code.draft.${project.id}.${file.path}`,
+                            `zq.code.draft.${resource.id}.${file.path}`,
                           );
                           void openFile(file.path);
                         }, true),
@@ -512,7 +465,7 @@ export function CodeWorkspace({
           <p className="code-preview-hint">
             Start your development server in Terminal, then open its address
             here.
-            {project.hostId !== "local"
+            {resource.hostId !== "local"
               ? " Remote localhost ports are forwarded over SSH."
               : ""}
           </p>

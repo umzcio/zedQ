@@ -1,3 +1,4 @@
+import {useResearchActions} from './ResearchCard'
 import { TooltipButton } from '@zq/ui'
 import { useRef, useState, type ReactElement } from 'react'
 import { ArrowSquareOut, PencilSimple, Trash, FolderSimple, DotsThree } from '@phosphor-icons/react'
@@ -21,9 +22,11 @@ export function ChatContextMenu({ conversation:c, chat, disabled, deleteDisabled
  const {notify}=useHost(),[busy,setBusy]=useState(false),[open,setOpen]=useState(false),openingDialog = useRef(false),lock=useRef(false)
  function choose(kind: ChatAction['kind']) { openingDialog.current = true; onAction({ kind, conversation:c }) }
  async function run(action:()=>Promise<unknown>){if(disabled||lock.current)return;lock.current=true;setBusy(true);try{await action()}catch(e){notify((e as Error).message)}finally{lock.current=false;setBusy(false)}}
+ const researchActions=useResearchActions(chat.research,chat.research.jobs.find(j=>j.conversationId===c.id))
  const blocked=disabled||busy,mutating=blocked||deleteDisabled
  const actions=[
   {label:'Open chat',run:()=>onOpen(c.id),disabled:blocked},
+  ...researchActions,
   ...(!c.deletedAt?[{label:c.pinned?'Unpin chat':'Pin chat',run:()=>void run(()=>chat.updateConversation({id:c.id,pinned:!c.pinned})),disabled:blocked},{label:'Rename…',run:()=>choose('rename'),disabled:blocked},{label:'Move to project…',run:()=>choose('move'),disabled:mutating}]:[]),
   {label:'Export as Markdown…',run:()=>void run(()=>chat.exportConversation(c.id)),disabled:blocked},
   ...(c.deletedAt?[{label:'Restore chat',run:()=>void run(()=>chat.updateConversation({id:c.id,deleted:false})),disabled:mutating}]:[{label:c.archivedAt?'Restore from archive':'Archive chat',run:()=>void run(()=>chat.updateConversation({id:c.id,archived:!c.archivedAt})),disabled:mutating},{label:'Move to Trash…',run:()=>choose('delete'),disabled:mutating}]),

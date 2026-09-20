@@ -64,6 +64,7 @@ class ChatService{
  async sendQueuedMessage(conversationId,item){return this.sendMessage({conversationId,text:item.text,tools:item.tools},item)}
  async sendMessage(input,queued){
   if(this.shuttingDown)throw Error('Chat is closing. Reopen zQ before sending messages.');
+  if(this.researchBusy?.(input.conversationId))throw Error('Stop or finish research in this chat before sending another message.');
   const epoch=this.epoch;
   const current=this.conversation(input.conversationId),c=queued?{...current,connectionId:queued.connectionId,model:queued.model}:current,connection=this.state.connections.find(x=>x.id===c.connectionId);
   if(queued&&(!connection||(connection.updatedAt??0)!==queued.connectionUpdatedAt))throw Error('The queued provider configuration changed. Remove this item and queue it again with the current connection.');
@@ -118,6 +119,7 @@ class ChatService{
  }
  send({conversationId,text:content,noteIds=[],attachmentIds=[],tools:requestedTools=[],artifactContext,skillIds,connectorIds},adapter,revision,queued){
   if(this.shuttingDown)throw Error('Chat is closing. Reopen zQ before sending messages.');
+  if(this.researchBusy?.(conversationId))throw Error('Stop or finish research in this chat before sending another message.');
   if(this.runs.has(conversationId))throw Error('A response is already running in this conversation.');if(this.runs.size>=3)throw Error('Three responses are already running. Stop one before starting another.');
   if(!text(content,64000)||!content.trim()&&!attachmentIds.length&&!noteIds.length&&!queued?.attachments.length&&!queued?.context.length||!Array.isArray(noteIds)||noteIds.length>10||!noteIds.every(id=>typeof id==='string'))throw Error('Enter a message (up to 64 KB) and select at most ten notes.');
   const stored=this.conversation(conversationId);if(!queued&&!revision&&stored.queue?.items.length)throw Error('This chat has queued messages. Add this message to the queue or remove the queued items first.');if(stored.deletedAt||stored.archivedAt)throw Error('Restore this chat before continuing.');const c=queued?{...stored,connectionId:queued.connectionId,model:queued.model}:revision?{...stored,...revision.choice}:stored;const connection=this.state.connections.find(x=>x.id===c.connectionId);if(!connection||!c.model)throw Error('Choose a connection and model first.');

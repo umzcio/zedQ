@@ -101,7 +101,7 @@ async function renderPdf(title, blocks, typography = {}) {
     return glyphs.get(key);
   };
   // Preflight all glyphs before starting the output stream; never silently lose text.
-  for(const [text,family] of [[title,families.title],...blocks.map(block=>[blockText(block),block.type==='heading'?families.heading:families.body])])for(const character of text.replace(/[\n\t]/g,' '))glyph(character,family);
+  for(const [text,family] of [[title,families.title],...blocks.map(block=>[block.type==='chart'?block.plot.marks.filter(m=>m.kind==='text').map(m=>m.text).join(' '):blockText(block),block.type==='heading'?families.heading:families.body])])for(const character of text.replace(/[\n\t]/g,' '))glyph(character,family);
   const doc = new PDFDocument({ size: 'LETTER', margin: 48, info: { Title: title, Creator: 'zQ' }, compress: true });
   for (const font of fonts) doc.registerFont(font.name, font.path);
   const chunks = [];
@@ -169,6 +169,7 @@ async function renderPdf(title, blocks, typography = {}) {
   try {
     paragraph(title, typography.titleSize ?? 23,0,families.title);
     for (const block of blocks) {
+      if(block.type==='chart'){const height=block.plot.height*516/block.plot.width;ensure(height+12);require('./research/report-charts.cjs').pdf(doc,block.plot,48,y,516,drawLine);y+=height+12;continue;}
       if (block.type !== 'table') {
         if (block.type === 'heading') { ensure(65); y += 7; }
         paragraph(blockText(block), block.type === 'heading' ? (typography.headingSize ? Math.max(8, typography.headingSize - (block.level - 1) * 2) : Math.max(12, 20 - block.level * 2)) : block.type === 'code' ? 9 : (typography.bodySize ?? 11), block.type === 'list' ? 10 : 0,block.type==='heading'?families.heading:families.body);
@@ -450,4 +451,4 @@ async function previewArtifact({ name, mime, data } = {}) {
   return { text: text + (length >= MAX_SOURCE_BYTES ? '\n[Preview limited to 100 KB of text]' : '') };
 }
 
-module.exports = { renderArtifact, previewArtifact, parseContent };
+module.exports = { renderArtifact, previewArtifact, parseContent, renderPdf };

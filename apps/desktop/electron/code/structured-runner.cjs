@@ -4,6 +4,8 @@ const fs = require('node:fs'),
   path = require('node:path')
 const { spawn } = require('node:child_process')
 const { timingSafeEqual, randomUUID } = require('node:crypto')
+const { CodexProtocol } = require('./codex-protocol.cjs')
+const { KimiProtocol } = require('./kimi-protocol.cjs')
 const { ClaudeProtocol } = require('./claude-protocol.cjs')
 const { atomic, privateRead } = require('./code-catalog.cjs')
 const { fail } = require('./service-storage.cjs')
@@ -82,6 +84,7 @@ async function run(root, id) {
     if (e.code !== 'ENOENT') throw e
     journal = { seq: 0, events: [] }
   }
+  if (config.nativeReplay || ['kimi','codex'].includes(config.adapter)) journal = { seq: 0, events: [] } // ACP replays the native history, once.
   const pendingOld = new Set(
     journal.events
       .filter((e) => e.requestId && !e.resolved)
@@ -97,6 +100,27 @@ async function run(root, id) {
     receiptVerified = false
   const ownershipFile = path.join(root, id + '.ownership.json')
   atomic(ownershipFile, { state: 'launching', nonce: config.nonce })
+  const eventSizes = new WeakMap()
+  const eventBytes = e => {
+    if (!eventSizes.has(e)) eventSizes.set(e, Buffer.byteLength(JSON.stringify(e)))
+    return eventSizes.get(e)
+  }
+  let journalBytes = journal.events.reduce((sum, e) => sum + eventBytes(e), 0)
+  let journalDirty = false, journalTimer
+  function persistJournal() {
+    clearTimeout(journalTimer)
+    journalTimer = null
+    if (!journalDirty || journalBlocked) return
+    try {
+      atomic(journalFile, journal)
+      journalDirty = false
+    } catch {
+      journalBlocked = true
+      error = 'STORAGE_UNAVAILABLE'
+      protocol.state = 'error'
+      signalChild()
+    }
+  }
   function event(e) {
     const safe = {
       ...e,
@@ -109,21 +133,29 @@ async function run(root, id) {
       delete safe.input
       safe.text = String(safe.text).slice(0, 8000)
     }
-    journal.events.push(safe)
-    while (
-      journal.events.length > 256 ||
-      Buffer.byteLength(JSON.stringify(journal)) > 240000
-    )
-      journal.events.shift()
-    try {
-      atomic(journalFile, journal)
-    } catch {
-      journalBlocked = true
-      error = 'STORAGE_UNAVAILABLE'
-      protocol.state = 'error'
-      signalChild()
+    if (safe.eventId) {
+      const prior = journal.events.find(e => e.eventId === safe.eventId)
+      if (prior) {
+        if (!safe.toolName && prior.toolName) safe.toolName = prior.toolName
+        if (!safe.input && prior.input) safe.input = prior.input
+        journalBytes -= eventBytes(prior)
+        journal.events = journal.events.filter(e => e.eventId !== safe.eventId)
+      }
     }
+    journal.events.push(safe)
+    journalBytes += eventBytes(safe)
+    // Account for commas and the envelope without serializing the entire
+    // retained transcript for every message in a native history replay.
+    while (journal.events.length > 256 || journalBytes + journal.events.length + 64 > 240000)
+      journalBytes -= eventBytes(journal.events.shift())
+    journalDirty = true
+    if ((config.nativeReplay || ['kimi','codex'].includes(config.adapter)) && !protocol.initialized && safe.kind !== 'error') {
+      // This is a replayable display cache; native Kimi owns durable history.
+      // Batch replay writes, but flush before exposing a ready controller.
+      journalTimer ||= setTimeout(persistJournal, 50)
+    } else persistJournal()
   }
+
   const send = (m) => {
     if (
       journalBlocked ||
@@ -134,7 +166,9 @@ async function run(root, id) {
       fail('RUNNER_UNAVAILABLE')
     child.stdin.write(JSON.stringify(m) + '\n')
   }
-  const protocol = new ClaudeProtocol({
+  const Protocol = config.adapter === 'codex' ? CodexProtocol : config.adapter === 'kimi' ? KimiProtocol : ClaudeProtocol
+  const protocol = new Protocol({
+    cwd: config.launch.cwd,
     nativeId: config.nativeId,
     send,
     event
@@ -160,12 +194,13 @@ async function run(root, id) {
     if (error) return
     try {
       protocol.feed(data)
+      if (protocol.initialized) persistJournal()
     } catch (e) {
       protocolError(
         [
           'IDENTITY_MISMATCH',
           'INVALID_PROTOCOL',
-          'PROTOCOL_TOO_LARGE'
+          'PROTOCOL_TOO_LARGE', 'KIMI_AUTH_REQUIRED', 'KIMI_LOAD_FAILED', 'KIMI_PROTOCOL_UNSUPPORTED', 'CODEX_LOAD_FAILED', 'NATIVE_SESSION_IN_USE'
         ].includes(e.code)
           ? e.code
           : 'PROTOCOL_FAILED'
@@ -210,12 +245,22 @@ async function run(root, id) {
     setTimeout(finishStop, 50)
   }
   function stop() {
+    if (stopping) return
     stopping = true
-    signalChild()
+    if (['kimi','codex'].includes(config.adapter) && !ended) {
+      protocol.close(signalChild)
+      // If graceful close stalls, ownership remains unconfirmed; the host will
+      // not start a replacement. Do not kill an engine still flushing history.
+    } else signalChild()
     if (ended) finishStop()
   }
   function verifyReceipt(required) {
     if (error) { if (required) fail(error); return }
+    if (['kimi','codex'].includes(config.adapter)) {
+      receiptVerified = protocol.verified && protocol.initialized
+      if (required && (!receiptVerified || ended)) fail(error || 'SESSION_NOT_READY')
+      return
+    }
     if (!receiptVerified) {
       try {
         const r = privateRead(config.receipt)
@@ -261,7 +306,7 @@ async function run(root, id) {
         if (m.method === 'status') {
           verifyReceipt(false)
           result = {
-            nativeId: receiptVerified && !error ? config.nativeId : null,
+            nativeId: receiptVerified && !error ? protocol.nativeId : null,
             state: error ? 'error' : receiptVerified && protocol.initialized ? protocol.state : 'starting',
             initialized: protocol.initialized,
             model: protocol.model || null,
@@ -317,6 +362,11 @@ async function run(root, id) {
     server.once('error', reject)
     server.listen(socketPath, resolve)
   })
+  if (config.nativeReplay) {
+    if (config.nativeReplay.truncated) event({kind:'status',text:'Showing recent activity. Earlier history is retained by Claude.'})
+    for (const item of config.nativeReplay.events) event(item)
+    persistJournal()
+  }
   protocol.initialize()
 }
 if (require.main === module)

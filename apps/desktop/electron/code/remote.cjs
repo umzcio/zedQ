@@ -5,6 +5,14 @@ const {atomic,privateRead,keys,text} = require('./code-catalog.cjs')
 const {fail} = require('./service-storage.cjs')
 const quote = v => "'"+v.replace(/'/g,"'\\''")+"'"
 const validAlias = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.@-]{0,199}$/.test(v)
+function asUser(argv, runAs='login') {
+  if (!['login','root'].includes(runAs)) fail('INVALID_HOST')
+  // sudo -i reconstructs argv as shell text and expands literal tmux IDs ($0).
+  // Run root's login shell explicitly, forwarding arguments as positional values.
+  return runAs === 'root' ? ['sudo','-n','-H','--','/bin/sh','-c',
+    'exec "${SHELL:-/bin/sh}" -l -c '+quote('cd "$HOME" && exec "$@"')+' zq-root "$@"',
+    'zq-root',...argv] : argv
+}
 function sshArgs(alias, argv, tty=false) {
   if (!validAlias(alias) || !Array.isArray(argv) || argv.some(v=>typeof v!=='string'||v.includes('\0'))) fail('INVALID_HOST')
   return ['-o','BatchMode=yes','-o','ConnectTimeout=10','-o','ControlMaster=no','-o','ControlPath=none',...(tty?['-tt']:['-T']),'--',alias,argv.map(quote).join(' ')]
@@ -46,10 +54,12 @@ function runSSH(alias, argv, input, spawnProcess=spawn) {
 // Fixed installer, fed only shipped code bytes. No shell interpolation, credentials,
 // renderer-selected install path, or remote startup files are copied into zQ.
 const INSTALL = `const fs=require('fs'),path=require('path'),os=require('os'),crypto=require('crypto');let raw='';process.stdin.setEncoding('utf8');process.stdin.on('data',b=>{raw+=b;if(raw.length>2097152)process.exit(2)});process.stdin.on('end',()=>{const files=JSON.parse(raw);const base=path.join(os.homedir(),'.local/share/zq');fs.mkdirSync(base,{recursive:true,mode:448});for(const dir of [base,path.join(base,'code'),path.join(base,'code','bundles')]){fs.mkdirSync(dir,{recursive:true,mode:448});const s=fs.lstatSync(dir);if(!s.isDirectory()||s.isSymbolicLink()||s.uid!==process.getuid()||(s.mode&63))process.exit(3)}const digest=crypto.createHash('sha256').update(raw).digest('hex');const dest=path.join(base,'code','bundles',digest);fs.mkdirSync(dest,{mode:448,recursive:true});const st=fs.lstatSync(dest);if(!st.isDirectory()||st.isSymbolicLink()||st.uid!==process.getuid()||(st.mode&63))process.exit(3);for(const [name,content] of Object.entries(files)){if(!/^[a-z-]+\\.cjs$/.test(name))process.exit(4);const file=path.join(dest,name);if(fs.existsSync(file)){const s=fs.lstatSync(file);if(!s.isFile()||s.isSymbolicLink()||s.uid!==process.getuid()||(s.mode&63)||s.nlink!==1||fs.readFileSync(file,'utf8')!==content)process.exit(5)}else fs.writeFileSync(file,content,{flag:'wx',mode:384})}process.stdout.write(JSON.stringify({bridge:path.join(dest,'remote-bridge.cjs')}))})`
+// Native terminals use tmux's configured shell; zsh is only needed by zsh agent launchers.
+const DEPENDENCY_PROBE = 'for dependency in node tmux; do command -v "$dependency" >/dev/null 2>&1 || printf "%s\\n" "$dependency"; done'
 function bundle(){return Object.fromEntries(fs.readdirSync(__dirname).filter(n=>/^[a-z-]+\.cjs$/.test(n)).sort().map(n=>[n,fs.readFileSync(path.join(__dirname,n),'utf8')]))}
-function openRemote(alias, bridge, spawnProcess=spawn) {
+function openRemote(alias, bridge, spawnProcess=spawn, runAs='login') {
   return new Promise((resolve,reject)=>{
-    const child=spawnProcess('/usr/bin/ssh',sshArgs(alias,['node',bridge]),{stdio:['pipe','pipe','pipe']})
+    const child=spawnProcess('/usr/bin/ssh',sshArgs(alias,asUser(['node',bridge],runAs)),{stdio:['pipe','pipe','pipe']})
     const pending=new Map();let buffer='',serial=0,ready=false,metadata
     const error=code=>Object.assign(new Error(code),{code})
     const timer=setTimeout(()=>{child.kill();reject(error('SSH_SERVICE_TIMEOUT'))},15000)
@@ -74,23 +84,72 @@ function openRemote(alias, bridge, spawnProcess=spawn) {
   })
 }
 class RemoteHosts {
-  constructor(root,{run=runSSH,open=openRemote}={}){this.file=path.join(root,'hosts.json');this.run=run;this.open=open;this.clients=new Map();this.snapshots=new Map();try{this.hosts=privateRead(this.file)}catch(e){if(e.code!=='ENOENT')throw e;this.hosts=[]}}
+  constructor(root,{run=runSSH,open=(alias,bridge,runAs)=>openRemote(alias,bridge,spawn,runAs)}={}) {
+    this.file=path.join(root,'hosts.json');this.cacheFile=path.join(root,'remote-snapshots.json');
+    this.run=run;this.open=open;this.clients=new Map();this.connecting=new Map();this.snapshots=new Map();
+    try {this.hosts=privateRead(this.file)} catch(e) {if(e.code!=='ENOENT')throw e;this.hosts=[]}
+    try {
+      const cached=privateRead(this.cacheFile)
+      for(const host of this.hosts) {
+        const summary=cached[host.id]
+        if(summary && ['projects','profiles','sessions'].every(key=>Array.isArray(summary[key])))
+          this.snapshots.set(host.id,summary)
+      }
+    } catch(e) {if(e.code!=='ENOENT')throw e}
+  }
+  saveSnapshots(){atomic(this.cacheFile,Object.fromEntries(this.snapshots))}
   save(){atomic(this.file,this.hosts)}
   rows(){return this.hosts.map(h=>({...h,kind:'ssh',available:this.clients.has(h.id),error:this.clients.has(h.id)?null:'Connect to access this host.'}))}
   find(id){const h=this.hosts.find(h=>h.id===id);if(!h)fail('HOST_NOT_FOUND');return h}
-  create(input){keys(input,['name','sshAlias']);if(!text(input.name,200)||!validAlias(input.sshAlias)||this.hosts.length>=32)fail('INVALID_HOST');const h={id:randomUUID(),name:input.name,sshAlias:input.sshAlias};this.hosts.push(h);this.save();return this.rows().find(r=>r.id===h.id)}
-  update({id,patch}){const h=this.find(id);keys(patch,['name','sshAlias']);if((patch.name!==undefined&&!text(patch.name,200))||(patch.sshAlias!==undefined&&!validAlias(patch.sshAlias)))fail('INVALID_HOST');if(patch.sshAlias&&patch.sshAlias!==h.sshAlias)fail('HOST_ALIAS_IMMUTABLE');Object.assign(h,patch);this.save();return this.rows().find(r=>r.id===id)}
-  delete(id){this.find(id);this.disconnect(id);this.hosts=this.hosts.filter(h=>h.id!==id);this.snapshots.delete(id);this.save();return {ok:true}}
-  async connect(id){const h=this.find(id);if(this.clients.has(id))return this.rows().find(r=>r.id===id)
-    await this.run(h.sshAlias,['/bin/sh','-c','command -v node >/dev/null && command -v tmux >/dev/null && test -x /bin/zsh'])
-    const installed=JSON.parse(await this.run(h.sshAlias,['node','-e',INSTALL],JSON.stringify(bundle())))
-    if(!path.posix.isAbsolute(installed.bridge)||!installed.bridge.endsWith('/remote-bridge.cjs'))fail('SSH_BOOTSTRAP_FAILED')
-    const c=await this.open(h.sshAlias,installed.bridge);this.clients.set(id,c)
-    try{await this.snapshot(id)}catch(e){this.disconnect(id);throw e}return this.rows().find(r=>r.id===id)
+  create(input){keys(input,['name','sshAlias','runAs','visible']);if(input.runAs!==undefined&&!['login','root'].includes(input.runAs)||input.visible!==undefined&&typeof input.visible!=='boolean')fail('INVALID_HOST');const existing=this.hosts.find(h=>h.sshAlias===input.sshAlias&&(h.runAs||'login')===(input.runAs||'login'));if(existing)return this.rows().find(h=>h.id===existing.id);if(!text(input.name,200)||!validAlias(input.sshAlias)||this.hosts.length>=32)fail('INVALID_HOST');const h={id:randomUUID(),name:input.name,sshAlias:input.sshAlias,...(input.runAs?{runAs:input.runAs}:{}),...(input.visible!==undefined?{visible:input.visible}:{})};this.hosts.push(h);this.save();return this.rows().find(r=>r.id===h.id)}
+  update({id,patch}){const h=this.find(id);keys(patch,['name','sshAlias','runAs','visible']);if(patch.runAs!==undefined&&patch.runAs!==(h.runAs||'login'))fail('HOST_USER_IMMUTABLE');if(patch.visible!==undefined&&typeof patch.visible!=='boolean')fail('INVALID_HOST');if((patch.name!==undefined&&!text(patch.name,200))||(patch.sshAlias!==undefined&&!validAlias(patch.sshAlias)))fail('INVALID_HOST');if(patch.sshAlias&&patch.sshAlias!==h.sshAlias)fail('HOST_ALIAS_IMMUTABLE');Object.assign(h,patch);this.save();return this.rows().find(r=>r.id===id)}
+  delete(id){this.find(id);this.disconnect(id);this.hosts=this.hosts.filter(h=>h.id!==id);this.snapshots.delete(id);this.save();this.saveSnapshots();return {ok:true}}
+  async connect(id) {
+    const h=this.find(id)
+    if(this.clients.has(id))return this.rows().find(r=>r.id===id)
+    if(this.connecting.has(id))return this.connecting.get(id).promise
+    const attempt={cancelled:false}
+    attempt.promise=this.connectOnce(h,attempt).finally(()=>{if(this.connecting.get(id)===attempt)this.connecting.delete(id)})
+    this.connecting.set(id,attempt)
+    return attempt.promise
   }
-  disconnect(id){this.clients.get(id)?.close();this.clients.delete(id);return {ok:true}}
+  async connectOnce(h,attempt) {
+    const id=h.id,runAs=h.runAs||'login'
+    if(runAs==='root') {
+      try { await this.run(h.sshAlias,asUser(['/bin/sh','-c','test "$(id -u)" = 0'],runAs)) }
+      catch {fail('SSH_SUDO_REQUIRED')}
+    }
+    const missing=(await this.run(h.sshAlias,asUser(['/bin/sh','-c',DEPENDENCY_PROBE],runAs)) || '').trim()
+    if(missing==='node')fail('SSH_NODE_REQUIRED')
+    if(missing==='tmux')fail('SSH_TMUX_REQUIRED')
+    if(missing==='node\ntmux')fail('SSH_DEPENDENCIES_REQUIRED')
+    if(missing)fail('SSH_BOOTSTRAP_FAILED')
+    if(attempt.cancelled)fail('HOST_DISCONNECTED')
+    const installed=JSON.parse(await this.run(h.sshAlias,asUser(['node','-e',INSTALL],runAs),JSON.stringify(bundle())))
+    if(!path.posix.isAbsolute(installed.bridge)||!installed.bridge.endsWith('/remote-bridge.cjs'))fail('SSH_BOOTSTRAP_FAILED')
+    if(attempt.cancelled)fail('HOST_DISCONNECTED')
+    const c=await this.open(h.sshAlias,installed.bridge,runAs)
+    if(attempt.cancelled){c.close();fail('HOST_DISCONNECTED')}
+    if(runAs==='root'&&c.metadata?.uid!==0){c.close();fail('SSH_USER_MISMATCH')}
+    this.clients.set(id,c)
+    try{await this.snapshot(id)}catch(e){this.disconnect(id);throw e}
+    return this.rows().find(r=>r.id===id)
+  }
+  disconnect(id){const attempt=this.connecting.get(id);if(attempt){attempt.cancelled=true;this.connecting.delete(id)}this.clients.get(id)?.close();this.clients.delete(id);return {ok:true}}
   async request(id,method,input){const c=this.clients.get(id);if(!c)fail('HOST_DISCONNECTED');try{return await c.request('code:'+method,input)}catch(e){if(['SERVICE_DISCONNECTED','SERVICE_REQUEST_TIMEOUT'].includes(e.code))this.disconnect(id);throw e}}
-  async snapshot(id){const s=await this.request(id,'snapshot',{});for(const key of ['projects','profiles','sessions'])for(const r of s[key])r.hostId=id;this.snapshots.set(id,s);return s}
-  close(){for(const id of this.clients.keys())this.disconnect(id)}
+  async snapshot(id) {
+    const s=await this.request(id,'snapshot',{}),summary={}
+    for(const key of ['projects','profiles','sessions']) {
+      for(const row of s[key])row.hostId=id
+      summary[key]=s[key]
+    }
+    // Persist navigation metadata only. Cached hosts stay disconnected until explicitly opened.
+    if(JSON.stringify(this.snapshots.get(id))!==JSON.stringify(summary)) {
+      this.snapshots.set(id,summary)
+      this.saveSnapshots()
+    }
+    return s
+  }
+  close(){for(const id of new Set([...this.clients.keys(),...this.connecting.keys()]))this.disconnect(id)}
 }
-module.exports={RemoteHosts,sshArgs,quote,discoverAliases,runSSH,openRemote,INSTALL}
+module.exports={asUser,RemoteHosts,sshArgs,quote,discoverAliases,runSSH,openRemote,INSTALL,DEPENDENCY_PROBE}

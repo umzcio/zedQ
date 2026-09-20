@@ -160,6 +160,19 @@ test('real PTY streams ANSI and closing client detaches owned terminal', async (
   assert.ok(output.includes('\x1b['))
   await a.invoke('writeTerminal', { id: s.id, data: 'hello\r' })
   await until(() => output.includes('echo:hello'))
+  // Mouse input must reach the attached tmux client, rather than being injected
+  // into the agent pane with send-keys. Verify actual history scrolling.
+  const target = 'zqc-' + s.id, socket = path.join(h.root, 'tmux')
+  execFileSync(tmux, ['-S', socket, 'set-option', '-t', target, 'mouse', 'on'])
+  await a.invoke('writeTerminal', {id:s.id,data:Array.from({length:100},(_,i)=>'scroll-line-'+i+'\r').join('')})
+  await until(() => output.includes('scroll-line-99'))
+  const history = () => execFileSync(tmux, ['-S',socket,'display-message','-p','-t',target,'#{pane_in_mode}:#{scroll_position}'],{encoding:'utf8'}).trim()
+  await a.invoke('writeTerminal',{id:s.id,data:'\x1b[<64;10;8M'})
+  await until(()=>history().startsWith('1:'))
+  const before = Number(history().split(':')[1])
+  for(let i=0;i<20;i++)await a.invoke('writeTerminal',{id:s.id,data:'\x1b[<64;10;8M'})
+  await until(()=>Number(history().split(':')[1])>before)
+  execFileSync(tmux,['-S',socket,'send-keys','-t',target,'-X','cancel'])
   await a.invoke('resizeTerminal', { id: s.id, cols: 110, rows: 35 })
   a.close()
   const b = h.service()
@@ -177,7 +190,7 @@ test('real PTY streams ANSI and closing client detaches owned terminal', async (
     output += c.data
   }
   await b.invoke('attachTerminal', { id: s.id, cols: 110, rows: 35 })
-  await until(() => output.includes('terminal:'))
+  await until(() => output.includes('scroll-line-99'))
   assert.equal(
     (await b.invoke('stopSession', { id: s.id, expectedRevision: s.revision }))
       .state,

@@ -186,7 +186,7 @@ class CodeCatalog {
       !text(input.functionName, 100) ||
       !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(input.functionName) ||
       (input.hostId && input.hostId !== 'local') ||
-      (input.adapter !== undefined && !['claude', 'terminal'].includes(input.adapter)) ||
+      (input.adapter !== undefined && !['claude', 'codex', 'terminal'].includes(input.adapter)) ||
       (input.modes &&
         (!Array.isArray(input.modes) ||
           !input.modes.length ||

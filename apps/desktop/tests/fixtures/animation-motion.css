@@ -1,0 +1,9 @@
+body{background:var(--canvas);color:var(--text)}
+.motion-fixture{padding:36px;max-width:980px}
+.motion-fixture h1{font-size:23px;margin-bottom:8px}.motion-fixture h2{font-size:15px;margin-bottom:12px}
+.motion-fixture>p{color:var(--muted)}.motion-fixture>section{margin:24px 0;padding:18px;border:1px solid var(--line);border-radius:10px}
+.motion-fixture>section>button,.motion-fixture>section>[data-state]>button{padding:8px 12px;margin-right:10px;background:var(--hover);border-radius:6px}
+.fixture-tabs{width:760px;max-width:100%}.fixture-tabs .workspace-tabs{width:100%;overflow-x:auto}
+.fixture-citation{position:fixed;padding:4px;color:var(--blue)}.position-center{left:65%;top:65%}.position-top-left{left:3px;top:3px}.position-top-right{right:3px;top:3px}.position-bottom-left{left:3px;bottom:3px}.position-bottom-right{right:3px;bottom:3px}
+
+.fixture-projects{max-height:160px;overflow:auto}.fixture-projects .chat-project-row{position:relative;min-width:180px;padding:8px 24px 8px 8px}

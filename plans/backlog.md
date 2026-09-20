@@ -1,5 +1,17 @@
 # Product backlog
 
+## Ready for user testing — Chat deep research
+
+Product scope agreed on 2026-09-19; implementation plan in [chat-deep-research.md](chat-deep-research.md). Selected Chat model, explicit source selection, durable background jobs while zQ is running, and versioned Markdown research reports with citations, tables and charts. Native runner/recovery, research coordinator/source adapters and Chat UI (source selection, plan review, persistent progress and completion actions) are implemented and tested in source. Report artifact publication, immutable versions, chart data and Markdown/PDF/CSV/SVG exports are implemented in Chat 1.19.0; packaged verification passed and the updated app has been reopened in the regular workspace. Research-specific reuse of existing connectors is in scope; unrelated connector expansion and deferred items below remain deferred.
+
+## Deferred — Code agent/account handoffs
+
+Deferred at the user's request on 2026-09-19. Discuss before starting implementation.
+
+- Switch agents or account profiles mid-task while keeping the Code task, reports, and working context connected.
+- Preserve native conversation history and make any limits on transferring context between harnesses clear.
+- Support the user's practice of spreading work across profiles, including codex and codex-gmail.
+
 ## Deferred — connectors (entire workstream)
 
 Deferred at the user's request on 2026-09-14. Pause all connector implementation, expansion, polish, and verification until explicitly resumed. Existing shipped connector functionality remains available. The next active project should be outside connectors and is not yet selected.

@@ -5,8 +5,8 @@ import {searchActivitySummary} from './search-activity'
 import {useEffect,useState} from 'react'
 import {useHost,unwrap} from '@zq/module-api'
 import type {ChatMessage,ChatToolActivity,ChatToolKind,ChatToolOption,ModelChoice} from '@zq/module-api'
-import {CaretRight,Check,Code,DownloadSimple,File,Globe,SlidersHorizontal} from '@phosphor-icons/react'
-import {Checkbox,Collapsible,CollapsibleContent,CollapsibleTrigger,ContextMenu,ContextMenuContent,ContextMenuItem,ContextMenuTrigger,Popover,PopoverContent,PopoverTrigger} from '@zq/ui'
+import {CaretRight,Check,Code,DownloadSimple,File,Globe,MagnifyingGlass,SlidersHorizontal} from '@phosphor-icons/react'
+import {DropdownMenu,DropdownMenuContent,DropdownMenuItem,DropdownMenuTrigger,Collapsible,CollapsibleContent,CollapsibleTrigger,ContextMenu,ContextMenuContent,ContextMenuItem,ContextMenuTrigger} from '@zq/ui'
 
 export function useToolOptions(choice:ModelChoice|null){
  const {services,notify}=useHost(),key=JSON.stringify(choice)
@@ -14,12 +14,22 @@ export function useToolOptions(choice:ModelChoice|null){
  useEffect(()=>{let live=true;if(choice)unwrap(services.chat.toolOptions(choice)).then(options=>{if(live)setResult({key,options,error:''})}).catch(e=>{if(live){setResult({key,options:[],error:e.message});notify(e.message)}});return()=>{live=false}},[key])
  return {options:result.key===key?result.options:[],ready:!choice||result.key===key,error:result.key===key?result.error:''}
 }
-export function ChatToolPicker({options,selected,onChange,disabled}:{options:ChatToolOption[];selected:ChatToolKind[];onChange:(tools:ChatToolKind[])=>void;disabled:boolean}){
+export function ChatToolPicker({options,selected,onChange,disabled,research}:{options:ChatToolOption[];selected:ChatToolKind[];onChange:(tools:ChatToolKind[])=>void;disabled:boolean;research?:{active:boolean;reason:string;disabled:boolean;onChange:(active:boolean)=>void}}){
  const [open,setOpen]=useState(false)
  useEffect(()=>{if(disabled)setOpen(false)},[disabled])
- if(!options.length)return null
- return <Popover open={open&&!disabled} onOpenChange={setOpen}><PopoverTrigger asChild><TooltipButton type="button" className={`chat-tools-trigger ${selected.length?'has-tools':''}`} disabled={disabled} aria-label="Choose provider tools" tooltip="Choose tools this model can use for your next message"><SlidersHorizontal size={16}/><span>Tools{selected.length?` · ${selected.length}`:''}</span></TooltipButton></PopoverTrigger><PopoverContent side="top" align="start" className="chat-tools-menu" aria-label="Provider tools"><div className="chat-tools-heading">Tools for this model</div>{options.map(option=><label key={option.kind} className="chat-tool-option"><Checkbox tooltip={`${selected.includes(option.kind) ? 'Turn off' : 'Enable'} ${option.label}: ${option.description}`} checked={selected.includes(option.kind)} onCheckedChange={checked=>onChange(checked===true?[...selected,option.kind]:selected.filter(kind=>kind!==option.kind))}/><span>{option.label}<small>{option.description}</small></span></label>)}<p>Provider usage charges may apply.</p></PopoverContent></Popover>
+ if(!options.length&&!research)return null
+ const active=!!research?.active
+ function mode(value:boolean){research?.onChange(value);setOpen(false)}
+ function toggleTool(kind:ChatToolKind){if(active)research?.onChange(false);onChange(!active&&selected.includes(kind)?selected.filter(value=>value!==kind):[...new Set([...selected,kind])])}
+ return <DropdownMenu open={open&&!disabled} onOpenChange={setOpen}>
+  <DropdownMenuTrigger asChild><TooltipButton type="button" className={`chat-tools-trigger ${active||selected.length?'has-tools':''}`} disabled={disabled} aria-label={active?'Research tools':'Choose provider tools'} tooltip="Choose tools for your next message">{active?<MagnifyingGlass size={16}/>:<SlidersHorizontal size={16}/>}<span>{active?'Research':`Tools${selected.length?` · ${selected.length}`:''}`}</span></TooltipButton></DropdownMenuTrigger>
+  <DropdownMenuContent side="top" align="start" className="chat-tools-menu" aria-label="Message tools">
+   {research&&<DropdownMenuItem className="chat-tools-row" role="menuitemcheckbox" aria-checked={active} aria-description={!active&&research.reason?research.reason:undefined} title={!active&&research.reason?research.reason:undefined} disabled={research.disabled||!active&&!!research.reason} onSelect={()=>mode(!active)}><MagnifyingGlass size={17}/><span>Research</span>{active&&<Check size={17} className="chat-tools-check" aria-hidden="true"/>}</DropdownMenuItem>}
+   {options.map(option=><DropdownMenuItem key={option.kind} className="chat-tools-row" role="menuitemcheckbox" aria-checked={!active&&selected.includes(option.kind)} disabled={research?.disabled} onSelect={()=>toggleTool(option.kind)}>{option.kind==='web_search'?<Globe size={17}/>:option.kind==='code_execution'?<Code size={17}/>:<MagnifyingGlass size={17}/>}<span>{option.label}</span>{!active&&selected.includes(option.kind)&&<Check size={17} className="chat-tools-check" aria-hidden="true"/>}</DropdownMenuItem>)}
+  </DropdownMenuContent>
+ </DropdownMenu>
 }
+
 function activityLabel(tool:ChatToolActivity){
  const running=tool.status==='running'
  if(tool.kind==='mcp'){const label=tool.detail?.split('\n')[0]||'Connector tool';return tool.status==='error'?`${label} · Failed`:tool.status==='stopped'||tool.status==='interrupted'?`${label} · ${tool.status}`:running?`${label} · Running`:label}

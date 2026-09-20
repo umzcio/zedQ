@@ -5,10 +5,11 @@ export function mergeEvents(
   incoming: CodeEvent[],
   truncated = false,
 ): CodeEvent[] {
+  if (!incoming.length && !truncated) return previous;
   const events = new Map(
-    (truncated ? [] : previous).map((event) => [event.seq, event]),
+    (truncated ? [] : previous).map((event) => [event.eventId || event.seq, event]),
   );
-  for (const event of incoming) events.set(event.seq, event);
+  for (const event of incoming) events.set(event.eventId || event.seq, { ...events.get(event.eventId || event.seq), ...event });
   const resolved = new Set(
     [...events.values()]
       .filter((event) => event.resolved && event.requestId)
@@ -16,7 +17,7 @@ export function mergeEvents(
   );
   return [...events.values()]
     .map((event) =>
-      event.requestId && resolved.has(event.requestId)
+      event.requestId && !event.resolved && resolved.has(event.requestId)
         ? { ...event, resolved: true }
         : event,
     )

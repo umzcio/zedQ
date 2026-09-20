@@ -35,4 +35,4 @@ function createProvider(provider, options = {}) {
   return createCloudProvider(provider, options, baseUrl => normalizeConnection({ provider, baseUrl }).baseUrl);
 }
 
-module.exports = { ...require('./hosted-tools.cjs'), createProvider, normalizeConnection, PROVIDERS, createOllamaProvider, normalizeBaseUrl };
+module.exports = { ...require('./hosted-tools.cjs'), researchCapabilities: require('./research.cjs').researchCapabilities, createProvider, normalizeConnection, PROVIDERS, createOllamaProvider, normalizeBaseUrl };

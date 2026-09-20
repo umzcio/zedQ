@@ -114,6 +114,12 @@ Chat 1.16.0 requires `artifacts.fonts.v1` for the expanded native typography sch
 
 The app-wide tooltip release adds `ui.tooltips.v1` to each updated module's required capabilities. It supplies shared tooltip exports and styles in the desktop shell. Older shells reject these newer module packages before loading their code because the capability exceeds their bundled permissions. Install the accompanying desktop build first; subsequent compatible module updates can continue independently. No native storage schema changed.
 
+## Shared motion release
+
+Chat 1.18.16 and Code 1.8.1 require `ui.motion.v1`, provided by the accompanying desktop shell. Shared dialog/popover timings and the citation preview surface now belong to `@zq/ui`; Chat no longer installs global timing overrides. Older shells reject these packages before loading them. Notes 1.1.6 uses the existing API for continuous, elapsed-time tab edge scrolling and is included in this release.
+
+Workspace search opens immediately. Draft attachments animate only when newly added; restored drafts and history remain still. Disclosure content expands immediately with a short interruptible caret transition. Code's automatic Human Review arrivals receive one brief opacity cue, suppressed during navigation, filtering, local moves and reduced motion. Shell notices can reverse their fade without replaying from zero. No native service or storage schema changed. Verification coverage is in `apps/desktop/tests/animation-motion.browser.cjs`.
+
 
 ### Workspace recovery and activity release
 
@@ -124,3 +130,53 @@ Invalid workspace text stays in the open renderer; the shell persists the valid 
 ## Code shell release
 
 Code adds the fifth bundled identity, `zq.code`, and the `code.v1` native capability. It requires this shell release; older four-module shells cannot install it independently. Four-module bundled sets remain readable for compatibility, while this release packages all five fallbacks. Code UI and styles stay in `modules/code`; native lifecycle, SSH and filesystem services stay in the desktop host.
+
+Code 1.2.0 adds `code.ssh-terminals.v1` and requires the accompanying shell update. It adds persisted host visibility/execution-user fields, standalone tmux session creation and project association. Existing host records retain login-user execution; new explorer selections default to passwordless root. Root and login-user catalogs remain separate. See [SSH terminals](code-ssh.md).
+
+Code 1.3.0 declares `code.session-files.v1` for session-scoped workspace reads/edits and native binary upload/download dialogs. Install it with the updated shell; older shells reject the added capability.
+
+Code 1.4.0 adds session tabs, two resizable panes (side by side or stacked), and local view restoration. It uses the existing shell API and can be installed independently on the Code 1.3 shell. Closing tabs/panes detaches views; stopping a process remains a separate session action. Tab groups, focus, split ratio/direction, project selection, and workspace-panel visibility are restored. Saved SSH tabs show reconnect controls until their host is opened; restoration does not silently connect to remote hosts.
+
+Code 1.4.2 adds native Close Tab routing (`ui.close-tab.v1`) and requires the accompanying shell update. In Code, ⌘W detaches the focused tab and keeps its session running, including when closing the last tab. ⌘⇧[ / ⌘⇧] cycle within the focused pane. Dialogs block these actions; Ctrl+W on macOS remains available to the shell. Close Window is available separately as ⌘⇧W. Outside Code, Close Tab retains the previous window-close behavior.
+
+Code 1.5.0 declares `code.kimi-native.v1` for native Kimi discovery, creation and
+conversation handoff. It requires its accompanying shell update and a fresh
+local session helper; existing persistent agent processes are preserved.
+See [Native agent sessions](code-native-sessions.md) for behavior and boundaries.
+
+Code 1.6.0 requires `code.native-sessions.v1` for unified native-history discovery,
+Claude SDK reads and Codex app-server continuation. Ship with the accompanying
+shell and refreshed local helper; existing agent processes remain intact.
+The signed module cannot run on the earlier Kimi-only shell.
+
+Tasks 1.2.0 requires `github` / `github.prs.v1` and clipboard access for its Open PRs Kanban. Code 1.6.1 adds `code.review-links.v1` for the public `code.open` command. Ship both with the new native GitHub service; see [GitHub PR board](github-pr-board.md). The new shell also fixes fresh Codex threads attempting to read a rollout before their first turn.
+
+Code 1.7.0 owns the overall Code → Tasks Kanban; Open PRs is a category inside it. Tasks 1.2.1 removes the misplaced PR view. The shell adds Code task records to the existing native board store, preserving PR selections/reports. Code now declares `github`, `github.prs.v1`, and `code.tasks.v1`; Tasks no longer declares GitHub access.
+
+### Code 1.7.1: shared button contrast
+
+Removed the Code workspace/sidebar text inheritance rule from shared controls (`data-slot`). It was overriding the primary button foreground, producing dark text on the gunmetal light-theme button. The SSH browser regression now requires at least 4.5:1 contrast on Open host for all four palettes in both themes. SSH workflow checks, typecheck, and the signed single-module build passed; light/dark screenshots were inspected. No native-service change or helper restart.
+
+### Shared sidebar section disclosure
+
+The shell exports `SidebarSection` through `@zq/ui`, with the capability `ui.sidebar-sections.v1`. HQ 1.0.4, Notes 1.1.5, Tasks 1.2.2, Chat 1.18.15, and Code 1.7.5 use it for their existing sidebar collections. These versions require the matching shell; older shells reject the new capability.
+
+Expanded headings reveal a down chevron on hover or keyboard focus. Collapsed headings keep a right chevron visible. Enter/Space and the heading context menu toggle the section; counts and add/scope actions remain available. Each collection saves its preference in the app's local UI storage. Collapsing Code Sessions only hides navigation entries and does not detach running terminals.
+
+Validation: isolated packaged browser coverage across all five modules verifies hover visibility, keyboard/context menus, actions while collapsed, independent sections, and restart persistence. The SSH browser test verifies collapsing/reopening Sessions retains the same active session. Both themes inspected, typecheck and all five independent signed builds passed.
+
+## Chat 1.19.0: Deep Research
+
+Requires `research.v1` and `artifacts.research.v1` in the accompanying shell. Adds native checkpoint storage, research IPC and report artifact blobs/publication keys, so install the shell and Chat update together. Existing artifact/chat data stays compatible. Research continues across module/chat navigation while the app runs; quit preserves checkpoints for explicit resume. See [Chat research](chat-research.md) for capabilities, source scopes, report versions and export limits.
+
+Chat 1.19.1 consolidates Deep research into the existing composer Tools popover, removes the redundant Chat dropdown, and matches Research/Sources typography and spacing to existing composer controls. It uses the 1.19.0 shell API and ships as a signed Chat-only update. Typecheck, native-backed research browser flow, light/dark inspection, and isolated packaged-module activation passed.
+
+Chat 1.19.2 replaces the sectioned tool picker with a single shared Radix dropdown: icon, label, and right-aligned selected checkmark. Research stays in the same list as provider tools. No descriptions, heading, checkbox boxes, or charge footer. Existing regular tool selections survive switching Research on/off. Light/dark inspection, native-backed UI flow, typecheck and packaged signed-module activation passed.
+
+Chat 1.19.3 keeps the composer attachment + visible in Research, using the shared menu with Upload files and Choose sources. Upload, paste and drop open source selection after successful import in the same conversation; canceled or failed imports do not open it. No automatic source grants. Browser coverage checks the + menu, file import availability, picker focus and the full report flow; packaged activation and typecheck passed.
+
+Chat 1.19.4 groups Research sources into Selected, Web, Files, Notes and Connectors tabs with search and 25-item pagination. Escape closes the picker even with a visible tooltip, while preserving context-menu dismissal order. Removes the permanent composer plan/source instruction. Typecheck, native-backed browser flow (including 81-note pagination/search), light/dark inspection, single-module build and isolated packaged signed-module activation passed. Uses the existing 1.19.0 shell API.
+
+Chat 1.19.5 fixes a remaining Sources Escape failure when no dialog control has focus and a tooltip consumes document-level Escape. Dismissal now listens at window capture only while this picker is the top open dialog, yielding to open menus/listboxes and preserving IME composition. The installed 1.19.4 package reproduced the lost-focus failure; the signed 1.19.5 package passes the same native-key regression, direct/menu opening, tooltip dismissal, focus restoration, and existing source context-menu tests.
+
+Chat 1.19.6 removes the duplicate Choose sources entry from the Research attachment menu. The composer Sources control is the single entry point; + retains Upload files. The source picker footer reuses the shared dialog-actions typography and matching button sizes instead of inheriting oversized body text. Typecheck, the signed single-module build, native-backed UI and packaged flows passed; light/dark footers were visually checked.

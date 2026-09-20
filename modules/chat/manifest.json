@@ -1,6 +1,6 @@
 {
   "id": "zq.chat",
-  "version": "1.18.14",
+  "version": "1.19.6",
   "apiVersion": 1,
   "title": "Chat",
   "view": "Chat",
@@ -8,6 +8,7 @@
   "capabilities": [
     "workspace.read",
     "chat",
+    "research.v1",
     "connectors",
     "connectors.v1",
     "connectors.catalog.v1",
@@ -35,6 +36,9 @@
     "chat.flow.v1",
     "skills.activation.v1",
     "artifacts.fonts.v1",
-    "ui.tooltips.v1"
+    "ui.tooltips.v1",
+    "ui.sidebar-sections.v1",
+    "ui.motion.v1",
+    "artifacts.research.v1"
   ]
 }

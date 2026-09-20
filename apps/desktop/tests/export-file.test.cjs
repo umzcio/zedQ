@@ -23,7 +23,7 @@ test('artifact export preserves an approved existing destination when writing fa
   try { fs.writeSync(fd, bytes, 0, 3); throw Object.assign(Error('Disk full'), {code:'ENOSPC'}); }
   finally { fs.closeSync(fd); }
  }};
- vm.runInNewContext(source, {handle:(channel, fn) => {handler=fn}, fs:nativeFS, Buffer, window:{}, exportFile:(...args)=>writer()(...args), artifactService:()=>({file:()=>({name:'report.txt',data:Buffer.from('replacement').toString('base64')})}), dialog:{showSaveDialog:async()=>({canceled:false,filePath:destination})}});
+ vm.runInNewContext(source, {handle:(channel, fn) => {handler=fn}, fs:nativeFS, Buffer, window:{}, exportFile:(...args)=>writer()(...args), artifactService:()=>({artifact:()=>({format:'text'}),file:()=>({name:'report.txt',data:Buffer.from('replacement').toString('base64')})}), dialog:{showSaveDialog:async()=>({canceled:false,filePath:destination})}});
  // Inject the OS write failure below the shared writer as well as the old direct path.
  t.mock.method(fs, 'writeSync', () => {throw Object.assign(Error('Disk full'), {code:'ENOSPC'})});
  await assert.rejects(handler({}), {code:'ENOSPC'});

@@ -1,6 +1,6 @@
 {
   "id": "zq.notes",
-  "version": "1.1.4",
+  "version": "1.1.6",
   "apiVersion": 1,
   "title": "Notes",
   "view": "Notes",
@@ -13,6 +13,7 @@
     "artifacts",
     "artifacts.v1",
     "ui.tooltips.v1",
-    "workspace.activity.v1"
+    "workspace.activity.v1",
+    "ui.sidebar-sections.v1"
   ]
 }

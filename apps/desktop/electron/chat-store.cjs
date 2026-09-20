@@ -58,7 +58,7 @@ function valid(state){
    if(!m.context.every(n=>obj(n)&&id(n.id)&&text(n.title)&&text(n.body,100000)))return false;
   }
  }
- if(state.drafts!==undefined&&(!obj(state.drafts)||Object.keys(state.drafts).length>2100||!Object.entries(state.drafts).every(([key,d])=>id(key)&&obj(d)&&validConnectorIds(d.connectorIds,{nullable:true})&&validSkillIds(d.skillIds,{nullable:true})&&text(d.text,64000)&&Array.isArray(d.noteIds)&&d.noteIds.length<=10&&d.noteIds.every(id)&&toolList(d.tools)&&Array.isArray(d.attachments)&&d.attachments.length+d.noteIds.length<=10&&d.attachments.every(isAttachment))))return false;
+ if(state.drafts!==undefined&&(!obj(state.drafts)||Object.keys(state.drafts).length>2100||!Object.entries(state.drafts).every(([key,d])=>id(key)&&obj(d)&&require('./research/schema.cjs').validDraft(d.research)&&validConnectorIds(d.connectorIds,{nullable:true})&&validSkillIds(d.skillIds,{nullable:true})&&text(d.text,64000)&&Array.isArray(d.noteIds)&&d.noteIds.length<=10&&d.noteIds.every(id)&&toolList(d.tools)&&Array.isArray(d.attachments)&&d.attachments.length+d.noteIds.length<=10&&d.attachments.every(isAttachment))))return false;
  if(state.chatView!==undefined){const v=state.chatView;if(!obj(v)||!text(v.selected,256)||!(v.projectId===null||id(v.projectId))||typeof v.projectHome!=='boolean'||!obj(v.positions)||Object.keys(v.positions).length>2000||!Object.entries(v.positions).every(([key,p])=>id(key)&&stamp(p)))return false}
  return true;
 }

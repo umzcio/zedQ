@@ -10,7 +10,7 @@ const text=(value,max)=>typeof value==='string'&&Buffer.byteLength(value)<=max&&
 const pumps=new WeakMap();
 const errorText=error=>Buffer.from(String(error?.message||error||'The queued message could not be sent.')).toString('utf8').replace(/\0/g,'').slice(0,1000);
 const waiting=conversation=>conversation.messages.some(message=>message.interactions?.some(interaction=>interaction.status==='waiting'));
-const eligible=(host,conversation)=>conversation&&conversation.queue?.items.length&&!conversation.queue.paused&&!conversation.deletedAt&&!conversation.archivedAt&&!host.runs.has(conversation.id)&&!waiting(conversation);
+const eligible=(host,conversation)=>conversation&&conversation.queue?.items.length&&!conversation.queue.paused&&!conversation.deletedAt&&!conversation.archivedAt&&!host.runs.has(conversation.id)&&!host.researchBusy?.(conversation.id)&&!waiting(conversation);
 function consumeQueuedItem(conversation,expected){
  const queue=conversation.queue;
  if(!queue||queue.paused||!queue.items.length||JSON.stringify(queue.items[0])!==JSON.stringify(expected))throw Object.assign(Error('The queued message changed before it could start.'),{code:'QUEUE_CHANGED'});

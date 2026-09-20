@@ -13,6 +13,7 @@
     "rebuild:native": "electron-rebuild -f -w node-pty -v 44.2.0"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.277",
     "@fontsource/noto-sans": "5.3.0",
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
@@ -26,6 +27,8 @@
     "docx": "9.7.1",
     "exceljs": "4.4.0",
     "fontkit": "2.0.4",
+    "htmlparser2": "12.0.0",
+    "ipaddr.js": "2.5.0",
     "js-yaml": "4.3.2",
     "jszip": "3.10.2",
     "node-pty": "1.1.0",
@@ -74,6 +77,7 @@
       "node_modules/node-pty/**/*"
     ],
     "mac": {
+      "icon": "../../icon/zQ Exports/zQ-iOS-Default-1024x1024@1x.png",
       "target": "dir",
       "category": "public.app-category.productivity",
       "identity": null,

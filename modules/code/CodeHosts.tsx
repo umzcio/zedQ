@@ -16,6 +16,7 @@ import {
   DialogDescription,
 } from "@zq/ui";
 import { ItemMenu, MoreMenu, type Action } from "./CodeManagement";
+import { codeError } from "./errors";
 export function CodeHosts({
   open,
   snapshot,
@@ -49,13 +50,7 @@ export function CodeHosts({
       await action();
       onChanged();
     } catch (err) {
-      setError(
-        err instanceof Error && err.message.startsWith("SSH_")
-          ? "Could not connect. Verify this SSH alias, your host key and SSH agent, and that node, tmux and zsh are installed on the remote host."
-          : err instanceof Error
-            ? err.message
-            : String(err),
-      );
+      setError(codeError(err));
     } finally {
       setBusy(false);
     }
@@ -123,7 +118,7 @@ export function CodeHosts({
                         {host.available
                           ? "Connected"
                           : host.error || "Disconnected"}{" "}
-                        · {host.sshAlias}
+                        · {host.sshAlias} · {host.runAs === "root" ? "root" : "SSH login user"}
                       </small>
                     </span>
                   </button>
@@ -270,6 +265,7 @@ export function ExternalTerminals({
       .invoke("attachExternalTerminal", {
         projectId: project.id,
         target: row.target,
+        identity: row.identity,
         title: row.name,
       })
       .then((session) => onAttached(session.id))
