@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 const invoke = (name, ...args) => ipcRenderer.invoke(name, ...args);
 contextBridge.exposeInMainWorld('zq', Object.freeze({
  platform:process.platform,
+ updates:{status:()=>invoke('updates:status'),check:()=>invoke('updates:check'),download:()=>invoke('updates:download'),install:()=>invoke('updates:install'),subscribe:callback=>{const listener=(_,state)=>callback(state);ipcRenderer.on('updates:changed',listener);return()=>ipcRenderer.removeListener('updates:changed',listener)}},
  research:{catalog:input=>invoke('research:catalog',input),availability:input=>invoke('research:availability',input),create:input=>invoke('research:create',input),list:()=>invoke('research:list'),get:id=>invoke('research:get',id),acceptPlan:input=>invoke('research:acceptPlan',input),stop:id=>invoke('research:stop',id),finish:id=>invoke('research:finish',id),resume:id=>invoke('research:resume',id),retryStorage:()=>invoke('research:retryStorage'),subscribe:callback=>{const listener=(_,change)=>callback(change);ipcRenderer.on('research:changed',listener);return()=>ipcRenderer.removeListener('research:changed',listener)}},
  github:{invoke:async(method,input)=>{const result=await invoke('github:invoke',method,input);if(!result.ok)throw Object.assign(new Error(result.error.message),{code:result.error.code});return result.value}},
  code:{invoke:async(method,input)=>{const result=await invoke('code:invoke',method,input);if(!result.ok)throw Object.assign(new Error(result.error.message),{code:result.error.code});return result.value},subscribe:callback=>{const listener=(_,state)=>callback(state);ipcRenderer.on('code:changed',listener);return()=>ipcRenderer.removeListener('code:changed',listener)},onTerminal:callback=>{const listener=(_,chunk)=>callback(chunk);ipcRenderer.on('code:terminal',listener);return()=>ipcRenderer.removeListener('code:terminal',listener)}},
@@ -75,7 +76,7 @@ contextBridge.exposeInMainWorld('zq', Object.freeze({
   edit: (id, body) => invoke('files:edit', id, body), save: id => invoke('files:save', id),
   saveAs: id => invoke('files:save-as', id), reload: id => invoke('files:reload', id),
  },
- onCommand: callback => { const listener = (_, command) => callback(command); ipcRenderer.on('app:command', listener); return () => ipcRenderer.removeListener('app:command', listener); },
+ onCommand: callback => { const listener = (_, command) => callback(command); ipcRenderer.on('app:command', listener); ipcRenderer.send('app:commands-ready'); return () => ipcRenderer.removeListener('app:command', listener); },
  onCloseRequested: callback => { const listener = (_, id) => callback(id); ipcRenderer.on('window:close-request', listener); return () => ipcRenderer.removeListener('window:close-request', listener); },
  onCloseCancelled: callback => { const listener = (_, id) => callback(id); ipcRenderer.on('window:close-cancelled', listener); return () => ipcRenderer.removeListener('window:close-cancelled', listener); },
  finishClose: (id, error) => ipcRenderer.send('window:close-ready', id, error),

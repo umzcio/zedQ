@@ -67,3 +67,15 @@
 .voice-test textarea{width:100%;min-height:112px;resize:vertical;margin:0;font-size:13px;line-height:1.5}
 .voice-test-actions{display:flex;gap:8px;margin-top:8px}
 @media(max-width:850px){.voice-setting-row>label{width:100px}.voice-engine-status,.voice-microphone-field>.settings-muted{margin-left:112px}}
+
+.app-update-summary{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.app-update-summary>div{display:grid;gap:5px;min-width:0}
+.app-update-summary strong{font-size:14px;font-weight:550}
+.app-update-summary span,.app-update-details{font-size:12px;line-height:1.6;color:var(--muted)}
+.app-updates-settings button{font-size:12px;white-space:nowrap}
+.app-update-details{margin-top:16px}
+.app-update-details p{margin:0 0 12px}
+.app-update-details progress{width:100%;height:6px;accent-color:var(--accent-text)}
+.app-update-last-check{margin-top:16px!important}
+.app-update-error{font-size:12px;color:var(--color-destructive)}
+@media(max-width:850px){.app-update-summary{flex-wrap:wrap;gap:14px}}

@@ -13,8 +13,10 @@ export type WorkspaceState = {
 }
 export type FileDocument = {id:string;path:string;name:string;body:string;savedBody:string;fingerprint:string;warning?:string}
 export type Result<T> = {ok:true;value:T}|{ok:false;error:{code:string;message:string}}
+export type AppUpdateState={version:string;status:'unavailable'|'idle'|'checking'|'current'|'available'|'downloading'|'ready'|'restarting'|'error';message:string;availableVersion:string|null;percent:number;checkedAt:number|null}
 export type DesktopBridge = {
  platform:string;
+ updates?:{status:()=>Promise<Result<AppUpdateState>>;check:()=>Promise<Result<AppUpdateState>>;download:()=>Promise<Result<AppUpdateState>>;install:()=>Promise<Result<null>>;subscribe:(callback:(state:AppUpdateState)=>void)=>()=>void};
  code:CodeBridge;
  github:GitHubBridge;
  clipboard:{writeText:(text:string)=>Promise<Result<null>>};

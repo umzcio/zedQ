@@ -45,12 +45,13 @@ export default function App({draftIssues=[],initialState,initialFiles,onSnapshot
   if(command==='new-note')commands.run('notes.new',undefined)
   if(command==='open-file')commands.run('files.open',undefined)
   if(command==='settings')navigate('Settings')
+  if(command==='updates')openSettings('updates')
   if(command==='close-tab') {
    if(view==='Code')commands.run('code.closeTab',undefined)
    else window.close()
   }
   if(command==='save'||command==='save-as')commands.run('files.save',command==='save'?'save':'saveAs')
- }),[closing,commands,navigate,view])
+ }),[closing,commands,navigate,view,openSettings])
  useEffect(()=>{function keydown(e:KeyboardEvent){if(!closing&&!document.querySelector('[role="dialog"][data-state="open"]')&&(e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();setSearchOpen(o=>!o)}}window.addEventListener('keydown',keydown);return()=>window.removeEventListener('keydown',keydown)},[closing])
  useEffect(()=>{
   if(view!=='Settings'||closing)return

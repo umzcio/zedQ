@@ -11,6 +11,7 @@ const { CloseRequests } = require('./close-requests.cjs');
 const closeRequests = new CloseRequests();
 app.setName('zQ');
 if (process.env.ZQ_DATA_DIR) app.setPath('userData', path.resolve(process.env.ZQ_DATA_DIR));
+let updates, installingUpdate=false, commandsReady=false, pendingCommand=null;
 let window, workspace, files, code, codeFactory, codeError, chat, research, voice, connectors, attachments, chatError, connectorError, quitting = false, closeTimer;
 const index = path.resolve(__dirname, '../dist/index.html');
 const allowedURL = pathToFileURL(index).href;
@@ -25,16 +26,18 @@ function handle(channel, fn) {
   catch (error) { return { ok: false, error: { code: error.code || 'IO_ERROR', message: error.message || 'The operation failed.' } }; }
  });
 }
-function command(name) { window?.webContents.send('app:command', name); }
+function command(name) { if(commandsReady&&window&&!window.isDestroyed())window.webContents.send('app:command',name);else pendingCommand=name; }
+ipcMain.on('app:commands-ready',event=>{if(!trusted(event))return;commandsReady=true;if(pendingCommand){const name=pendingCommand;pendingCommand=null;command(name)}});
 async function closeFailed(id, message) {
  if (!closeRequests.fail(id)) return;
  clearTimeout(closeTimer);
  if (!window || window.isDestroyed()) return;
  const { response } = await dialog.showMessageBox(window, { type: 'warning', message: 'Your latest changes could not be saved.', detail: message, buttons: ['Keep zQ open', 'Quit without saving'], defaultId: 0, cancelId: 0, noLink: true });
  if (response === 1) { window.destroy(); app.exit(0); }
- else { quitting = false; chat?.resumeAfterWindowClose(); research?.reopen(); closeRequests.cancel(id); window?.webContents.send('window:close-cancelled', id); }
+ else { updates?.cancelInstall(); quitting = false; chat?.resumeAfterWindowClose(); research?.reopen(); closeRequests.cancel(id); window?.webContents.send('window:close-cancelled', id); }
 }
 function createWindow() {
+ commandsReady=false;
  if(!code&&codeFactory){try{code=codeFactory();codeError=null}catch(error){codeError=error}}
  chat?.resumeAfterWindowClose();
  research?.reopen();
@@ -59,7 +62,7 @@ function createWindow() {
 }
 app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); } });
 app.on('before-quit', event => { if (window && !window.isDestroyed()) { event.preventDefault(); quitting = true; window.close(); } });
-app.on('window-all-closed', () => { if (process.platform !== 'darwin' || quitting) app.quit(); });
+app.on('window-all-closed', () => { if (!installingUpdate && (process.platform !== 'darwin' || quitting)) app.quit(); });
 app.whenReady().then(async () => {
  if (!ownsLock) return;
  if (runtimeCheck) {
@@ -67,6 +70,11 @@ app.whenReady().then(async () => {
   catch (error) { console.error('Runtime check failed:', error.message); app.exit(1); }
   return;
  }
+ updates=require('./update-runtime.cjs').createAppUpdates({app,onChange:state=>{if(window&&!window.isDestroyed())window.webContents.send('updates:changed',state);if(installingUpdate&&state.status==='error'){installingUpdate=false;quitting=false;if(!window)createWindow();command('updates')}}});
+ handle('updates:status',()=>updates.snapshot());
+ handle('updates:check',()=>updates.check());
+ handle('updates:download',()=>updates.download());
+ handle('updates:install',()=>{if(closeRequests.active)throw new Error('Wait for the current close request to finish.');updates.requestInstall();setImmediate(()=>app.quit());return null});
  const clipboardService=require('./clipboard.cjs').createClipboardService(clipboard);
  handle('clipboard:writeText',text=>clipboardService.writeText(text));
  const directory = app.getPath('userData');
@@ -171,11 +179,14 @@ app.whenReady().then(async () => {
   if (!closeRequests.complete(id)) return;
   clearTimeout(closeTimer);
   const shouldQuit = quitting;
+  installingUpdate=updates?.snapshot().status==='restarting';
   window.destroy();
-  if (shouldQuit) app.quit();
+  if(installingUpdate){
+   if(!updates.installAfterClose()){installingUpdate=false;quitting=false;if(!window)createWindow()}
+  }else if (shouldQuit) app.quit();
  });
  Menu.setApplicationMenu(Menu.buildFromTemplate([
-  { label: 'zQ', submenu: [{ role: 'about' }, { type: 'separator' }, { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => command('settings') }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
+  { label: 'zQ', submenu: [{ role: 'about' }, { label:'Check for Updates…', click:()=>{if(!window)createWindow();command('updates');window.show();window.focus();void updates.check()} }, { type: 'separator' }, { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => command('settings') }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
   { label: 'File', submenu: [{ label: 'New Note', accelerator: 'CmdOrCtrl+N', click: () => command('new-note') }, { label: 'Open File…', accelerator: 'CmdOrCtrl+O', click: () => command('open-file') }, { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => command('save') }, { label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: () => command('save-as') }, { type: 'separator' }, { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: () => command('close-tab') }, { role: 'close', label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W' }] },
   { role: 'editMenu' }, { label: 'View', submenu: [{ role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] }, { role: 'windowMenu' },
  ]));

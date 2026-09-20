@@ -37,3 +37,6 @@ coverage/
 /modules/code/preview/
 /animation-plans/
 /.superpowers/
+
+# Signed desktop release artifacts
+/apps/desktop/release-signed/

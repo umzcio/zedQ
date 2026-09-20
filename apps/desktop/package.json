@@ -10,7 +10,8 @@
     "test": "node --test tests/*.test.cjs",
     "pack": "npm run build && electron-builder --mac dir --arm64",
     "check:runtime": "electron . --runtime-check",
-    "rebuild:native": "electron-rebuild -f -w node-pty -v 44.2.0"
+    "rebuild:native": "electron-rebuild -f -w node-pty -v 44.2.0",
+    "pack:release": "node ../../scripts/package-release.mjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.277",
@@ -25,6 +26,7 @@
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "docx": "9.7.1",
+    "electron-updater": "6.8.9",
     "exceljs": "4.4.0",
     "fontkit": "2.0.4",
     "htmlparser2": "12.0.0",

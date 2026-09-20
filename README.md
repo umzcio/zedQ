@@ -23,7 +23,7 @@ npm test
 npm run pack
 ```
 
-App bundle: `apps/desktop/release/mac-arm64/zQ.app`. This is a local development build, not a signed/notarized distribution or auto-updating release. Drag it into Applications if you want a stable Dock location. The app runs without the Vite server.
+App bundle: `apps/desktop/release/mac-arm64/zQ.app`. This is a local development build, not a signed/notarized distribution or auto-updating release. Drag it into Applications if you want a stable Dock location. The app runs without the Vite server. Settings → Updates and the zQ menu provide app update controls for signed releases; see [desktop app updates](docs/app-updates.md) for private release setup.
 
 ## What works
 

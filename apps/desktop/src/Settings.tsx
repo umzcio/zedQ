@@ -4,6 +4,7 @@ import type { SettingsSection, WorkspaceState } from '@zq/module-api'
 import { Check } from '@phosphor-icons/react'
 import ModuleSettings from './ModuleSettings'
 import VoiceSettings from './VoiceSettings'
+import UpdateSettings from './UpdateSettings'
 import './settings.css'
 
 const palettes=['green','blue','red','gunmetal'] as const
@@ -39,5 +40,6 @@ export default function Settings({section,theme,palette,setTheme,setPalette,clos
   <div className="settings-panel" hidden={section!=='skills'} inert={section!=='skills'||closing}><div ref={skillsSettingsRef}/></div>
   <div className="settings-panel" hidden={section!=='modules'} inert={section!=='modules'||closing}><ModuleSettings closing={closing}/></div>
   <div className="settings-panel" hidden={section!=='voice'} inert={section!=='voice'||closing}><VoiceSettings active={section==='voice'} closing={closing}/></div>
+  <div className="settings-panel" hidden={section!=='updates'} inert={section!=='updates'||closing}><UpdateSettings active={section==='updates'} closing={closing}/></div>
  </div>
 }
