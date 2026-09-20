@@ -70,3 +70,11 @@ The composer’s shadcn + popover offers Upload files and Add from Notes. Files 
 Supported: PNG/JPEG/WebP images, PDF text, and UTF-8 text/code files. Limits: 10 files/notes per message, 10 MiB per source file, 100 KB combined extracted text, PDF documents up to 100 pages. Scanned PDFs do not undergo OCR; attach screenshots instead. Images are normalized to JPEG, at most 1600 pixels on the long edge and 1 MiB, with a vision-capability check against the selected model before sending. Attachments are sent only with their chosen conversation. Original files are never modified.
 
 PDF extraction uses PDF.js in a worker with a timeout; image dimensions are checked before native decoding. Full attachment snapshots live in the private local chat store; renderer streaming updates carry only metadata and thumbnails.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, workspace isolation, conventions, and pull request guidance.
+
+## License
+
+[MIT](LICENSE.md) © 2026 Zach.
