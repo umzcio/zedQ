@@ -24,3 +24,4 @@ export * from './components/tabs'
 
 export * from './components/connector-icon'
 export * from './components/sidebar-section'
+export * from './components/switch'

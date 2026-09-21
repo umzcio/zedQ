@@ -5,6 +5,7 @@ import { Check } from '@phosphor-icons/react'
 import ModuleSettings from './ModuleSettings'
 import VoiceSettings from './VoiceSettings'
 import UpdateSettings from './UpdateSettings'
+import GeneralSettings from './GeneralSettings'
 import './settings.css'
 
 const palettes=['green','blue','red','gunmetal'] as const
@@ -12,6 +13,7 @@ export default function Settings({section,theme,palette,setTheme,setPalette,clos
  const page=useRef<HTMLDivElement>(null)
  useLayoutEffect(()=>{page.current?.closest('main')?.scrollTo({top:0})},[section])
  return <div className={`settings-page${section==='appearance'?' settings-page-appearance':''}`} ref={page}>
+  <div className="settings-panel" hidden={section!=='general'} inert={section!=='general'||closing}><GeneralSettings active={section==='general'} closing={closing}/></div>
   <div className="settings-panel settings-view" hidden={section!=='appearance'} inert={section!=='appearance'||closing}>
    <header className="page-heading"><div><div className="date-line">MAKE YOURSELF AT HOME</div><h1>Your space, your way<span className="accent">.</span></h1><p>A few small choices that make it feel like yours.</p></div></header>
    <section id="appearance" aria-labelledby="appearance-title">

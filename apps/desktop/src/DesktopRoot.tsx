@@ -21,9 +21,9 @@ export default function DesktopRoot({modules}:{modules:LoadedModule[]}){
  useEffect(()=>{
   if(!window.zq){setError('Open zQ as a desktop app to access your local workspace.');return}
   let mounted=true
-  Promise.all([unwrap(window.zq.workspace.load()),unwrap(window.zq.files.list())]).then(([workspace,files])=>{
+  Promise.all([unwrap(window.zq.workspace.load()),unwrap(window.zq.files.list()),window.zq.preferences?unwrap(window.zq.preferences.load()).catch(()=>null):Promise.resolve(null)]).then(([workspace,files,preferences])=>{
    if(!mounted)return
-   const state=workspace??freshWorkspace(); accepted.current=state;latest.current=state;fileDrafts.current=files;setLoaded({workspace:state,files})
+   const state=workspace??freshWorkspace();if(preferences&&preferences.startupView!=='restore')state.layout={...state.layout,view:preferences.startupView}; accepted.current=state;latest.current=state;fileDrafts.current=files;setLoaded({workspace:state,files})
   }).catch(e=>{if(mounted)setError(e.message)})
   return()=>{mounted=false}
  },[])

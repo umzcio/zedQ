@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, session, nativeImage, shell, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, session, nativeImage, shell, clipboard, Notification } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { exportFile } = require('./export-file.cjs');
@@ -11,6 +11,7 @@ const { CloseRequests } = require('./close-requests.cjs');
 const closeRequests = new CloseRequests();
 app.setName('zQ');
 if (process.env.ZQ_DATA_DIR) app.setPath('userData', path.resolve(process.env.ZQ_DATA_DIR));
+let preferences,notifications,automaticUpdates;
 let updates, installingUpdate=false, commandsReady=false, pendingCommand=null;
 let window, workspace, files, code, codeFactory, codeError, chat, research, voice, connectors, attachments, chatError, connectorError, quitting = false, closeTimer;
 const index = path.resolve(__dirname, '../dist/index.html');
@@ -36,7 +37,7 @@ async function closeFailed(id, message) {
  if (response === 1) { window.destroy(); app.exit(0); }
  else { updates?.cancelInstall(); quitting = false; chat?.resumeAfterWindowClose(); research?.reopen(); closeRequests.cancel(id); window?.webContents.send('window:close-cancelled', id); }
 }
-function createWindow() {
+function createWindow({hidden=false}={}) {
  commandsReady=false;
  if(!code&&codeFactory){try{code=codeFactory();codeError=null}catch(error){codeError=error}}
  chat?.resumeAfterWindowClose();
@@ -47,7 +48,8 @@ function createWindow() {
  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
  window.webContents.on('will-navigate', event => event.preventDefault());
  window.webContents.on('will-attach-webview', event => event.preventDefault());
- window.once('ready-to-show', () => window.show());
+ window.once('ready-to-show', () => {if(!hidden)window.show()});
+ window.on('focus',()=>{try{window.webContents.send('preferences:changed',preferences.snapshot())}catch{/* Settings reports read failures. */}});
  window.on('close', event => {
   event.preventDefault();
   const id = closeRequests.begin();
@@ -78,13 +80,20 @@ app.whenReady().then(async () => {
  const clipboardService=require('./clipboard.cjs').createClipboardService(clipboard);
  handle('clipboard:writeText',text=>clipboardService.writeText(text));
  const directory = app.getPath('userData');
+ const {AppPreferences,AutomaticUpdateChecks}=require('./app-preferences.cjs');
+ preferences=new AppPreferences({directory,app,isolated:!!process.env.ZQ_DATA_DIR,notificationsSupported:app.isPackaged&&Notification.isSupported(),onChange:state=>{if(window&&!window.isDestroyed())window.webContents.send('preferences:changed',state);automaticUpdates?.configure()}});
+ automaticUpdates=new AutomaticUpdateChecks({updates,enabled:()=>preferences.state.automaticUpdates});automaticUpdates.configure();
+ notifications=new (require('./app-notifications.cjs').AppNotifications)({Notification,enabled:kind=>!process.env.ZQ_DATA_DIR&&app.isPackaged&&preferences.state.notifications[kind],visible:()=>!!window?.isVisible()&&window.isFocused(),open:target=>{if(!window)createWindow();if(window.isMinimized())window.restore();window.show();window.focus();command('notification:'+JSON.stringify(target))}});
+ handle('preferences:load',()=>preferences.snapshot());handle('preferences:save',patch=>preferences.save(patch));
+ handle('preferences:testNotification',()=>{if(!preferences.snapshot().notificationsSupported)throw Error('Notifications are available in the installed app.');notifications.show('research','zQ notifications','You’ll see updates here when work needs your attention.',{view:'Settings'},{test:true});return null});
+ app.on('will-quit',()=>{automaticUpdates.close();notifications.close()});
  const sendCode=(channel,value)=>{if(window&&!window.isDestroyed())window.webContents.send(channel,value)};
- codeFactory=()=>new (require('./code/code-service.cjs').CodeService)({directory:path.join(directory,'code'),onChange:value=>sendCode('code:changed',value),onTerminal:value=>sendCode('code:terminal',value),pickDirectory:async()=>{const selected=await dialog.showOpenDialog(window,{title:'Choose Code project folder',properties:['openDirectory','createDirectory']});return selected.canceled?null:selected.filePaths[0]},pickUpload:async()=>{const result=await dialog.showOpenDialog(window,{title:'Upload files',properties:['openFile','multiSelections','showHiddenFiles']});return result.canceled?null:result.filePaths},pickDownload:async name=>{const result=await dialog.showSaveDialog(window,{title:'Download file',defaultPath:name,properties:['showOverwriteConfirmation','createDirectory']});return result.canceled?null:result.filePath},confirmReplace:async name=>(await dialog.showMessageBox(window,{type:'question',message:'Replace '+name+'?',detail:'A file with this name already exists in the destination folder.',buttons:['Cancel','Replace'],defaultId:0,cancelId:0})).response===1,openExternal:url=>shell.openExternal(url),reveal:folder=>shell.openPath(folder)});
+ codeFactory=()=>new (require('./code/code-service.cjs').CodeService)({directory:path.join(directory,'code'),onChange:value=>{notifications.code(value);sendCode('code:changed',value)},onTerminal:value=>sendCode('code:terminal',value),pickDirectory:async()=>{const selected=await dialog.showOpenDialog(window,{title:'Choose Code project folder',properties:['openDirectory','createDirectory']});return selected.canceled?null:selected.filePaths[0]},pickUpload:async()=>{const result=await dialog.showOpenDialog(window,{title:'Upload files',properties:['openFile','multiSelections','showHiddenFiles']});return result.canceled?null:result.filePaths},pickDownload:async name=>{const result=await dialog.showSaveDialog(window,{title:'Download file',defaultPath:name,properties:['showOverwriteConfirmation','createDirectory']});return result.canceled?null:result.filePath},confirmReplace:async name=>(await dialog.showMessageBox(window,{type:'question',message:'Replace '+name+'?',detail:'A file with this name already exists in the destination folder.',buttons:['Cancel','Replace'],defaultId:0,cancelId:0})).response===1,openExternal:url=>shell.openExternal(url),reveal:folder=>shell.openPath(folder)});
  try{code=codeFactory()}catch(error){codeError=error}
  const invokeCode=(method,input)=>{if(!code&&codeFactory){try{code=codeFactory();codeError=null}catch(error){codeError=error}}if(!code)throw codeError||new Error('Code service unavailable');return code.invoke(method,input)};
  handle('code:invoke',invokeCode);
  let github;
- handle('github:invoke',(method,input)=>{github ||= new (require('./github/board.cjs').GitHubBoard)({directory:path.join(directory,'github'),code:invokeCode,openExternal:url=>shell.openExternal(url)});return github.invoke(method,input)});
+ handle('github:invoke',async(method,input)=>{github ||= new (require('./github/board.cjs').GitHubBoard)({directory:path.join(directory,'github'),code:invokeCode,openExternal:url=>shell.openExternal(url)});const result=await github.invoke(method,input);if(result?.cards)notifications.tasks([...result.cards,...result.issues??[],...result.tasks??[]],{code:true});return result});
  const bundled=path.resolve(__dirname,'../bundled-modules');
  const moduleStore=new ModuleStore({directory:path.join(directory,'modules'),bundles:['hq','notes','tasks','chat','code'].map(name=>JSON.parse(fs.readFileSync(path.join(bundled,`${name}.zqmodule`),'utf8'))),trustedKeys:JSON.parse(fs.readFileSync(path.join(bundled,'trusted-keys.json'),'utf8')),apiVersion:1});
  handle('modules:runtime',()=>moduleStore.getRuntime());
@@ -108,7 +117,7 @@ app.whenReady().then(async () => {
  for(const method of ['load','save','availability','begin','transcribe','cancel'])handle(`voice:${method}`,input=>voice[method](input));
  const chatService=()=>{if(!chat)throw chatError;return chat};
  // Native research survives renderer navigation and publishes immutable artifacts.
- const researchService=()=>research??=new (require('./research/service.cjs').ResearchService)({directory:path.join(directory,'research'),adapter:new (require('./research/adapter.cjs').ResearchAdapter)({chat:chatService(),publish:input=>artifactService().publishResearch(input)}),onChange:change=>{if(window&&!window.isDestroyed())window.webContents.send('research:changed',change)}});
+ const researchService=()=>research??=new (require('./research/service.cjs').ResearchService)({directory:path.join(directory,'research'),adapter:new (require('./research/adapter.cjs').ResearchAdapter)({chat:chatService(),publish:input=>artifactService().publishResearch(input)}),onChange:change=>{notifications.research(change.job);if(window&&!window.isDestroyed())window.webContents.send('research:changed',change)}});
  if(chat)chat.researchBusy=id=>research?.busy(id)??false;
  for(const method of ['catalog','availability','create','list','get','acceptPlan','stop','finish','resume','retryStorage'])handle(`research:${method}`,input=>researchService()[method](input));
  handle('chat:load',()=>chatService().snapshot());
@@ -152,7 +161,7 @@ app.whenReady().then(async () => {
  session.defaultSession.setPermissionRequestHandler((webContents,permission,callback,details)=>callback(permit(webContents,permission,details,'request')));
  session.defaultSession.setPermissionCheckHandler((webContents,permission,origin,details)=>permit(webContents,permission,details,'check'));
  handle('workspace:load', () => workspace.load());
- handle('workspace:save', state => { workspace.save(state); return null; });
+ handle('workspace:save', state => {notifications.tasks(workspace.load()?.tasks??[]);workspace.save(state);notifications.tasks(state.tasks);return null;});
  handle('workspace:saveDraftCopy',async input=>{if(!input||typeof input.text!=='string'||!require('./chat-store.cjs').text(input.name,512))throw Error('Invalid recovery file.');const result=await dialog.showSaveDialog(window,{title:'Save unsaved edit',defaultPath:path.basename(input.name),properties:['showOverwriteConfirmation']});if(result.canceled||!result.filePath)return false;exportFile(result.filePath,input.text);return true});
  handle('files:list', () => files.list());
  handle('files:open', async () => {
@@ -175,6 +184,12 @@ app.whenReady().then(async () => {
   if (!trusted(event)||closeRequests.active?.id!==id||closeRequests.active.phase!=='waiting') return;
   if (typeof error === 'string') { closeFailed(id, error); return; }
   clearTimeout(closeTimer);
+  if(!quitting&&preferences.state.closeBehavior==='background'){
+   try{voice?.close()}catch(error){closeFailed(id,error.message);return}
+   if(!closeRequests.complete(id))return;
+   window.hide();window.webContents.send('window:close-cancelled',id);return;
+  }
+  quitting=true;
   try { voice?.close(); research?.shutdown(); chat?.shutdown(); await connectors?.suspend(); } catch(error) { closeFailed(id,error.message); return; }
   if (!closeRequests.complete(id)) return;
   clearTimeout(closeTimer);
@@ -186,10 +201,10 @@ app.whenReady().then(async () => {
   }else if (shouldQuit) app.quit();
  });
  Menu.setApplicationMenu(Menu.buildFromTemplate([
-  { label: 'zQ', submenu: [{ role: 'about' }, { label:'Check for Updates…', click:()=>{if(!window)createWindow();command('updates');window.show();window.focus();void updates.check()} }, { type: 'separator' }, { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => command('settings') }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
+  { label: 'zQ', submenu: [{ role: 'about' }, { label:'Check for Updates…', click:()=>{if(!window)createWindow();command('updates');window.show();window.focus();void updates.check()} }, { type: 'separator' }, { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => {if(!window)createWindow();command('settings');window.show();window.focus()} }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
   { label: 'File', submenu: [{ label: 'New Note', accelerator: 'CmdOrCtrl+N', click: () => command('new-note') }, { label: 'Open File…', accelerator: 'CmdOrCtrl+O', click: () => command('open-file') }, { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => command('save') }, { label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: () => command('save-as') }, { type: 'separator' }, { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: () => command('close-tab') }, { role: 'close', label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W' }] },
   { role: 'editMenu' }, { label: 'View', submenu: [{ role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] }, { role: 'windowMenu' },
  ]));
- createWindow();
+ createWindow({hidden:preferences.startHidden()});
  app.on('activate', () => { if (!window) createWindow(); else window.show(); });
 }).catch(error => { dialog.showErrorBox('zQ could not start', error.message); app.exit(1); });

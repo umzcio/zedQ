@@ -79,3 +79,4 @@
 .app-update-last-check{margin-top:16px!important}
 .app-update-error{font-size:12px;color:var(--color-destructive)}
 @media(max-width:850px){.app-update-summary{flex-wrap:wrap;gap:14px}}
+.app-preference-group{margin-bottom:32px}.app-preference-group h3{font-size:14px;font-weight:550;margin:0 0 8px}.app-preference-row{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:16px 0;border-bottom:1px solid var(--line);font-size:13px}.app-preference-row>div:first-child{min-width:0}.app-preference-row strong{font-weight:500}.app-preference-row p{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.5}.app-preference-row .zq-select-trigger{min-width:180px}.app-preference-actions{padding-top:16px}.app-preference-group>.settings-panel-note{margin:0 0 8px}.app-update-preferences{margin-top:28px;border-top:1px solid var(--line)}

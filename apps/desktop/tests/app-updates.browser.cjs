@@ -37,8 +37,9 @@ const {_electron}=require('playwright-core'),fs=require('node:fs'),os=require('n
   // Native menu entry opens the right settings section and starts a check.
   await page.getByRole('navigation',{name:'Settings sections'}).getByRole('button',{name:'Appearance',exact:true}).click();await app.evaluate(({Menu})=>Menu.getApplicationMenu().items[0].submenu.items.find(item=>item.label==='Check for Updates…').click());await page.getByRole('heading',{name:'Updates',exact:true}).waitFor();
   await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].close());
-  await page.waitForEvent('close');
-  const reopened=app.waitForEvent('window');await app.evaluate(({Menu})=>Menu.getApplicationMenu().items[0].submenu.items.find(item=>item.label==='Check for Updates…').click());const nextPage=await reopened;await nextPage.getByRole('heading',{name:'Updates',exact:true}).waitFor();
+  for(let i=0;i<100&&await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible());i++)await new Promise(r=>setTimeout(r,50));
+  assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible()),false);
+  await app.evaluate(({Menu})=>Menu.getApplicationMenu().items[0].submenu.items.find(item=>item.label==='Check for Updates…').click());await page.getByRole('heading',{name:'Updates',exact:true}).waitFor();assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible()),true);
   console.log('PASS: local-build gate, check/download states, navigation persistence, restart cancellation, context menu, native menu, light/dark/narrow layouts. No release installed.');
  }finally{await app?.close();fs.rmSync(directory,{recursive:true,force:true})}
 })().catch(error=>{console.error(error);process.exitCode=1});

@@ -1,11 +1,15 @@
 import {useEffect,useRef,useState} from 'react'
 import {unwrap,type AppUpdateState} from '@zq/module-api'
 import {Button,Dialog,DialogContent,DialogTitle,DialogDescription,ContextMenu,ContextMenuTrigger,ContextMenuContent,ContextMenuItem} from '@zq/ui'
+import {Switch} from '@zq/ui'
+import {useAppPreferences} from './useAppPreferences'
+import {PreferenceRow} from './GeneralSettings'
 import {ArrowClockwise,DownloadSimple} from '@phosphor-icons/react'
 
 export default function UpdateSettings({active,closing}:{active:boolean;closing:boolean}){
  const [state,setState]=useState<AppUpdateState|null>(null),[error,setError]=useState(''),[confirm,setConfirm]=useState(false),[pending,setPending]=useState(false)
  const operation=useRef(false)
+ const preferences=useAppPreferences(active)
  useEffect(()=>{if(!active||!window.zq.updates)return;let live=true,revision=0;const off=window.zq.updates.subscribe(next=>{revision++;if(live)setState(next)});void unwrap(window.zq.updates.status()).then(next=>{if(live&&!revision)setState(next)}).catch(e=>{if(live)setError(e.message)});return()=>{live=false;off()}},[active])
  async function run(action:'check'|'download'|'install'){
   if(!window.zq.updates||operation.current)return
@@ -34,6 +38,7 @@ export default function UpdateSettings({active,closing}:{active:boolean;closing:
     {state?.checkedAt&&<p className="app-update-last-check">Last checked {new Date(state.checkedAt).toLocaleString()}</p>}
    </div>
   </>}
+  {window.zq.preferences&&<div className="app-update-preferences"><PreferenceRow label="Automatically check for updates" description="Check on launch and every six hours. Downloads and restarts stay manual." disabled={closing||preferences.busy||!preferences.state} reset={()=>void preferences.save({automaticUpdates:false})}><Switch aria-label="Automatically check for updates" checked={preferences.state?.automaticUpdates??false} disabled={closing||preferences.busy||!preferences.state} onCheckedChange={automaticUpdates=>void preferences.save({automaticUpdates})}/></PreferenceRow>{preferences.error&&<p className="app-update-error" role="alert">{preferences.error}</p>}</div>}
   {error&&<p className="app-update-error" role="alert">{error}</p>}
   <Dialog open={confirm} onOpenChange={setConfirm}><DialogContent><DialogTitle>Restart to install zQ {state?.availableVersion}?</DialogTitle><DialogDescription>Your drafts will be saved. Running chats and research will be interrupted by the restart.</DialogDescription><div className="dialog-actions"><Button variant="ghost" disabled={busy} onClick={()=>setConfirm(false)}>Later</Button><Button disabled={busy} onClick={()=>void run('install')}>Restart and install</Button></div></DialogContent></Dialog>
  </section>

@@ -14,8 +14,11 @@ export type WorkspaceState = {
 export type FileDocument = {id:string;path:string;name:string;body:string;savedBody:string;fingerprint:string;warning?:string}
 export type Result<T> = {ok:true;value:T}|{ok:false;error:{code:string;message:string}}
 export type AppUpdateState={version:string;status:'unavailable'|'idle'|'checking'|'current'|'available'|'downloading'|'ready'|'restarting'|'error';message:string;availableVersion:string|null;percent:number;checkedAt:number|null}
+export type AppPreferences={startMinimized:boolean;startupView:'restore'|'HQ'|'Notes'|'Tasks'|'Chat'|'Code';closeBehavior:'background'|'quit';automaticUpdates:boolean;notifications:{research:boolean;agents:boolean;tasks:boolean};launchAtLogin:boolean;loginSupported:boolean;loginStatus:string;openedAtLogin:boolean;notificationsSupported:boolean}
+export type AppPreferencesPatch=Partial<Pick<AppPreferences,'startMinimized'|'startupView'|'closeBehavior'|'automaticUpdates'|'launchAtLogin'>>&{notifications?:Partial<AppPreferences['notifications']>}
 export type DesktopBridge = {
  platform:string;
+ preferences?:{load:()=>Promise<Result<AppPreferences>>;save:(patch:AppPreferencesPatch)=>Promise<Result<AppPreferences>>;testNotification:()=>Promise<Result<null>>;subscribe:(callback:(state:AppPreferences)=>void)=>()=>void};
  updates?:{status:()=>Promise<Result<AppUpdateState>>;check:()=>Promise<Result<AppUpdateState>>;download:()=>Promise<Result<AppUpdateState>>;install:()=>Promise<Result<null>>;subscribe:(callback:(state:AppUpdateState)=>void)=>()=>void};
  code:CodeBridge;
  github:GitHubBridge;

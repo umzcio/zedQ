@@ -23,7 +23,7 @@ export default function App({draftIssues=[],initialState,initialFiles,onSnapshot
  const [focusMode,setFocusMode]=useState(false),[notice,setNotice]=useState('')
  const [noticeAction,setNoticeAction]=useState<{label:string;run:()=>void}|undefined>()
  const notify=useCallback((message:string,action?:{label:string;run:()=>void})=>{setNoticeAction(action);setNotice(message)},[])
- const [settingsSection,setSettingsSection]=useState<SettingsSection>('appearance')
+ const [settingsSection,setSettingsSection]=useState<SettingsSection>('general')
  const [query,setQuery]=useState(''),[searchOpen,setSearchOpen]=useState(false)
  const [viewTarget,setViewTarget]=useState<HTMLElement|null>(null),[sidebarTarget,setSidebarTarget]=useState<HTMLElement|null>(null),[settingsTarget,setSettingsTarget]=useState<HTMLElement|null>(null)
  const [connectorsSettingsTarget,setConnectorsSettingsTarget]=useState<HTMLElement|null>(null)
@@ -41,6 +41,10 @@ export default function App({draftIssues=[],initialState,initialFiles,onSnapshot
  useLayoutEffect(()=>{onSnapshot(workspace)},[workspace,onSnapshot])
  useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>{setNotice('');setNoticeAction(undefined)},noticeAction?12000:3200);return()=>clearTimeout(timer)},[notice,noticeAction])
  useEffect(()=>window.zq.onCommand(command=>{
+  if(command.startsWith('notification:')&&!closing){
+   try{const target=JSON.parse(command.slice(13));if(['Chat','Code','Tasks','Settings'].includes(target.view)){navigate(target.view);if(target.id&&target.view==='Chat')commands.run('chat.open',{conversationId:target.id});if(target.id&&target.view==='Code')commands.run('code.open',{id:target.id})}}catch{/* Ignore malformed native targets. */}
+   return
+  }
   if(closing||document.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]'))return
   if(command==='new-note')commands.run('notes.new',undefined)
   if(command==='open-file')commands.run('files.open',undefined)

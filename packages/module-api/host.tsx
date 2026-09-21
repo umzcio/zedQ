@@ -15,7 +15,7 @@ export type Commands = {
  'tasks.new':Partial<Task>|undefined; 'tasks.edit':Task; 'tasks.move':{id:string;status:Status}; 'tasks.show':{project:string;scope:string};
 }
 export type CommandBus = {run:<K extends keyof Commands>(name:K,payload:Commands[K])=>boolean;register:<K extends keyof Commands>(name:K,handler:(payload:Commands[K])=>void)=>()=>void}
-export type SettingsSection='appearance'|'connections'|'skills'|'connectors'|'voice'|'modules'|'updates'
+export type SettingsSection='general'|'appearance'|'connections'|'skills'|'connectors'|'voice'|'modules'|'updates'
 export type Host = {
  manifest:ModuleManifest;
  workspace:WorkspaceState;setWorkspace:Dispatch<SetStateAction<WorkspaceState>>;
