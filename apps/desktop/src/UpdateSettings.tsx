@@ -13,24 +13,24 @@ export default function UpdateSettings({active,closing}:{active:boolean;closing:
   try{const next=await unwrap(window.zq.updates[action]());if(next)setState(next);if(action==='install')setConfirm(false)}catch(e){setError((e as Error).message)}finally{operation.current=false;setPending(false)}
  }
  const status=state?.status,busy=closing||pending||status==='checking'||status==='downloading'||status==='restarting'
- const canCheck=!!state&&!busy&&!['unavailable','ready'].includes(status!)
+ const canAct=!!state&&!busy&&status!=='unavailable'
+ const actionLabel=status==='available'?'Download update':status==='ready'?'Restart and install':status==='checking'?'Checking…':status==='downloading'?'Downloading…':status==='restarting'?'Restarting…':'Check for updates'
+ const ActionIcon=status==='available'||status==='downloading'?DownloadSimple:ArrowClockwise
+ const act=()=>{if(status==='ready')setConfirm(true);else void run(status==='available'?'download':'check')}
  const heading=status==='current'?'You’re up to date':status==='available'?`zQ ${state?.availableVersion} is available`:status==='ready'?`zQ ${state?.availableVersion} is ready to install`:status==='checking'?'Checking for updates…':status==='downloading'?`Downloading update · ${Math.round(state?.percent??0)}%`:status==='restarting'?'Saving and restarting…':status==='unavailable'?'Local build':status==='error'?'Couldn’t update zQ':'Check for a new version'
  return <section className="app-updates-settings">
   <header className="settings-panel-header"><div><h2>Updates</h2><p>Keep zQ up to date.</p></div></header>
   {!window.zq.updates?<p className="settings-panel-note">Install a newer desktop build to manage app updates.</p>:<>
    <ContextMenu><ContextMenuTrigger asChild><div className="app-update-summary">
     <div><strong>zQ{state?` ${state.version}`:''}</strong><span>{heading}</span></div>
-    <Button variant="outline" disabled={!canCheck} onClick={()=>void run('check')}><ArrowClockwise size={15}/>Check for updates</Button>
+    <Button variant="outline" disabled={!canAct} onClick={act}><ActionIcon size={15}/>{actionLabel}</Button>
    </div></ContextMenuTrigger><ContextMenuContent>
-    <ContextMenuItem disabled={!canCheck} onSelect={()=>void run('check')}>Check for updates</ContextMenuItem>
+    <ContextMenuItem disabled={!canAct} onSelect={act}>{actionLabel}</ContextMenuItem>
     <ContextMenuItem disabled={!state||closing} onSelect={()=>{if(state)void unwrap(window.zq.clipboard.writeText(`zQ ${state.version}`)).catch(e=>setError(e.message))}}>Copy version</ContextMenuItem>
    </ContextMenuContent></ContextMenu>
    <div className="app-update-details" role="status">
     {state?.message&&<p>{state.message}</p>}
-    {status==='idle'&&<p>Updates download when you choose. You decide when to restart.</p>}
-    {status==='available'&&<><p>Download the update, then restart when you’re ready.</p><Button variant="outline" disabled={busy} onClick={()=>void run('download')}><DownloadSimple size={15}/>Download update</Button></>}
     {status==='downloading'&&<progress aria-label="Update download" max={100} value={state?.percent}/>}
-    {status==='ready'&&<><p>Your update is downloaded. Restart zQ to install it.</p><Button variant="outline" disabled={busy} onClick={()=>setConfirm(true)}><ArrowClockwise size={15}/>Restart and install</Button></>}
     {state?.checkedAt&&<p className="app-update-last-check">Last checked {new Date(state.checkedAt).toLocaleString()}</p>}
    </div>
   </>}
