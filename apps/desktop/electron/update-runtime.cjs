@@ -1,6 +1,14 @@
 const fs=require('node:fs'),path=require('node:path');
 const {execFileSync}=require('node:child_process');
 const {AppUpdates,updateAvailability}=require('./app-updates.cjs');
+async function updaterOptions(config,readToken){
+ if(!config||config.provider!=='github'||config.owner!=='umzcio'||config.repo!=='zedQ'||![undefined,false,true].includes(config.private)||config.token)throw new Error('Unsupported update feed');
+ if(config.private!==true)return {...config,private:false};
+ // Compatibility for private builds. Public releases never request GitHub credentials.
+ const token=(await readToken()).trim();
+ if(!token)throw new Error('GitHub sign-in is required');
+ return {...config,token};
+}
 function createAppUpdates({app,onChange}){
  const configPath=path.join(process.resourcesPath,'app-update.yml');
  let signed=false;
@@ -13,11 +21,8 @@ function createAppUpdates({app,onChange}){
  const unavailable=updateAvailability({packaged:app.isPackaged,platform:process.platform,configured:fs.existsSync(configPath),signed});
  return new AppUpdates({version:app.getVersion(),unavailable,onChange,createUpdater:async()=>{
   const config=require('js-yaml').load(fs.readFileSync(configPath,'utf8'));
-  if(config.provider!=='github'||config.owner!=='umzcio'||config.repo!=='zedQ'||config.private!==true)throw new Error('Unsupported update feed');
-  // Use this Mac's existing GitHub login. The token stays in the main process and is never packaged or logged.
-  const token=(await new (require('./github/client.cjs').GitHubClient)().execute(['auth','token','--hostname','github.com'],{json:false})).trim();
-  if(!token)throw new Error('GitHub sign-in is required');
-  return new (require('electron-updater').MacUpdater)({...config,token});
+  const options=await updaterOptions(config,()=>new (require('./github/client.cjs').GitHubClient)().execute(['auth','token','--hostname','github.com'],{json:false}));
+  return new (require('electron-updater').MacUpdater)(options);
  }});
 }
-module.exports={createAppUpdates};
+module.exports={createAppUpdates,updaterOptions};

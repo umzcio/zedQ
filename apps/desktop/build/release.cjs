@@ -6,5 +6,5 @@ module.exports={
  directories:{output:'release-signed'},
  forceCodeSigning:true,
  mac:{...base.mac,identity:process.env.CSC_NAME.replace(/^Developer ID Application:\s*/,''),target:['dmg','zip'],hardenedRuntime:true,notarize:true,signIgnore:['/Contents/Resources/native/']},
- publish:{provider:'github',owner:'umzcio',repo:'zedQ',private:true,releaseType:'draft'},
+ publish:{provider:'github',owner:'umzcio',repo:'zedQ',private:false,releaseType:'draft'},
 };

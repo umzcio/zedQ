@@ -47,3 +47,21 @@ test('checking while downloading cannot replace the pending update',async()=>{
 test('synchronous install failure becomes a recoverable error',async()=>{
  const {service,engine}=fixture();await service.check();await service.download();service.requestInstall();engine.quitAndInstall=()=>{throw Error('secret')};assert.equal(service.installAfterClose(),false);assert.equal(service.snapshot().status,'error');
 });
+
+test('public update feeds work without GitHub authentication; private builds retain native authentication',async()=>{
+ const {updaterOptions}=require('../electron/update-runtime.cjs');
+ const config={provider:'github',owner:'umzcio',repo:'zedQ'};let reads=0;
+ const readToken=async()=>{reads++;return ' fixture-native-token \n'};
+ for(const setting of [{},{private:false}]){
+  const options=await updaterOptions({...config,...setting},readToken);
+  assert.equal(options.private,false);assert.equal(options.token,undefined);
+ }
+ assert.equal(reads,0);
+ const legacy=await updaterOptions({...config,private:true},readToken);
+ assert.equal(reads,1);assert.equal(legacy.token,'fixture-native-token');
+ await assert.rejects(updaterOptions({...config,private:true},async()=>''),/sign-in/);
+ for(const change of [{owner:'someone-else'},{repo:'other'},{provider:'generic'},{private:'false'},{token:'embedded-token'}]){
+  await assert.rejects(updaterOptions({...config,...change},readToken),/Unsupported/);
+ }
+ assert.equal(reads,1);
+});

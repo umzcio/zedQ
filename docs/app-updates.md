@@ -6,7 +6,9 @@ The zQ menu → **Check for Updates…** and Settings → **Updates** share the 
 
 The local `npm run pack` build is unsigned and intentionally has no update feed. It displays **Local build**, not “up to date.” Actual installation needs a signed release and a newer published version; this cannot be verified with only one unsigned local build.
 
-The release configuration targets the private `umzcio/zedQ` GitHub repository. Each Mac uses its existing `gh auth login --hostname github.com` login with read access to that repository. No shared GitHub token is embedded in the bundle. Authentication is read in the native process only when checking; it is never sent to the renderer or logged. Do not use this private setup for public distribution.
+From v0.1.1, releases use the public `umzcio/zedQ` GitHub repository. Checking and downloading updates do not require GitHub CLI or a GitHub login. No GitHub token is embedded in the bundle.
+
+The original v0.1.0 build uses an authenticated feed and still requires its Mac’s existing GitHub CLI login for the first upgrade. Once v0.1.1 is installed, future updates use the public feed. The runtime retains native-only authentication for explicitly private build configurations.
 
 ## Build a release
 
@@ -15,7 +17,7 @@ The release configuration targets the private `umzcio/zedQ` GitHub repository. E
 3. Install a Developer ID Application certificate in the build Mac's Keychain. Set `CSC_NAME` to that identity. For a CI import, use electron-builder's `CSC_LINK` and `CSC_KEY_PASSWORD` secrets as well.
 4. Configure electron-builder notarization credentials through `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` (or its supported App Store Connect API-key credentials). Never put credentials in tracked configuration.
 5. Run `npm ci`, the checks in CONTRIBUTING.md, and `npm run pack:release -w @zq/desktop`. This signs the native helpers with the same identity, preserving the document helper’s sandbox entitlements and caller requirement during outer app signing. It builds signed ARM64 DMG/ZIP artifacts in `apps/desktop/release-signed/`. `forceCodeSigning` makes missing signing fail the release build. This command does **not** publish.
-6. Verify the outer app's signature with `codesign --verify --deep --strict` and Gatekeeper with `spctl --assess --type execute`; inspect signing identity and notarization. Ensure the packaged `app-update.yml` has the expected private repo and contains no token. Inspect `latest-mac.yml` and confirm ZIP/DMG names and hashes correspond to the built artifacts.
+6. Verify the outer app's signature with `codesign --verify --deep --strict` and Gatekeeper with `spctl --assess --type execute`; inspect signing identity and notarization. Ensure the packaged `app-update.yml` has the expected public repo and contains no token. Inspect `latest-mac.yml` and confirm ZIP/DMG names and hashes correspond to the built artifacts.
 7. Create a GitHub release with the matching version tag, then upload `latest-mac.yml`, DMG, ZIP, and generated blockmaps. Keep it a draft until validation is complete. The updater only sees published stable releases. Publishing is a separate action from building.
 
 ## Validate before distribution
