@@ -11,7 +11,8 @@ export const connectionProviders: { value: ProviderKind; label: string; legacy?:
  { value: 'perplexity', label: 'Perplexity' }, { value: 'openrouter', label: 'OpenRouter' }, { value: 'bedrock', label: 'AWS Bedrock' },
  { value: 'groq', label: 'Groq', legacy: true },
 ]
-const ollamaEndpoint = 'http://127.0.0.1:11434/'
+const localEndpoints = { ollama: 'http://127.0.0.1:11434', vllm: 'http://127.0.0.1:8000/v1' }
+const defaultEndpoint = (provider: ProviderKind) => provider === 'ollama' || provider === 'vllm' ? localEndpoints[provider] : provider === 'bedrock' ? bedrockEndpoint('us-east-1') : ''
 
 export function ConnectionDialog({ connection, disabled, closing, onClose, onSaved, onCloseAutoFocus }: {
  connection?: Connection; disabled: boolean; closing: boolean; onClose: () => void; onSaved: (name: string) => void; onCloseAutoFocus: (event: Event) => void
@@ -19,7 +20,7 @@ export function ConnectionDialog({ connection, disabled, closing, onClose, onSav
  const { services } = useHost()
  const [provider, setProvider] = useState<ProviderKind>(connection?.provider ?? 'ollama')
  const [name, setName] = useState(connection?.name ?? 'Ollama')
- const [baseUrl, setBaseUrl] = useState(connection?.baseUrl ?? ollamaEndpoint)
+ const [baseUrl, setBaseUrl] = useState(connection?.baseUrl ?? defaultEndpoint(connection?.provider ?? 'ollama'))
  const [apiKey, setApiKey] = useState(''), [removeApiKey, setRemoveApiKey] = useState(false)
  const [busy, setBusy] = useState<'test' | 'save' | null>(null), [error, setError] = useState('')
  const [models, setModels] = useState<string[] | null>(null)
@@ -37,7 +38,7 @@ export function ConnectionDialog({ connection, disabled, closing, onClose, onSav
  function changeProvider(next: ProviderKind) {
   const previousLabel = connectionProviders.find(option => option.value === provider)?.label
   if (!name.trim() || name === previousLabel) setName(connectionProviders.find(option => option.value === next)!.label)
-  setSelectedModels([]); setProvider(next); setBaseUrl(next === 'ollama' ? ollamaEndpoint : next === 'bedrock' ? bedrockEndpoint('us-east-1') : ''); setApiKey(''); setRemoveApiKey(false); resetResult()
+  setSelectedModels([]); setProvider(next); setBaseUrl(defaultEndpoint(next)); setApiKey(''); setRemoveApiKey(false); resetResult()
  }
  async function submit(action: 'test' | 'save') {
   if (blocked || pending.current || !valid) return
@@ -57,7 +58,7 @@ export function ConnectionDialog({ connection, disabled, closing, onClose, onSav
     {!selecting&&<>
     {!connection&&<div className="provider-options" role="group" aria-label="Provider">{connectionProviders.filter(option=>!option.legacy).map(option=><TooltipButton tooltip={`Set up a connection to ${option.label}`} type="button" key={option.value} aria-pressed={provider===option.value} disabled={blocked} onClick={()=>changeProvider(option.value)}><ProviderLogo provider={option.value} size={23}/><span>{option.label}</span></TooltipButton>)}</div>}
     <label htmlFor="connection-name">Name<Input ref={nameInput} id="connection-name" value={name} disabled={blocked} maxLength={120} required onChange={event => { setName(event.target.value); resetResult() }}/></label>
-    {selfHosted && <label htmlFor="connection-endpoint">Endpoint<Input id="connection-endpoint" type="url" placeholder={provider === 'ollama' ? ollamaEndpoint : 'https://your-server/v1'} value={baseUrl} disabled={blocked} required onChange={event => { setBaseUrl(event.target.value); resetResult() }}/></label>}
+    {selfHosted && <label htmlFor="connection-endpoint">Endpoint<Input id="connection-endpoint" type="url" placeholder={defaultEndpoint(provider)} value={baseUrl} disabled={blocked} required onChange={event => { setBaseUrl(event.target.value); resetResult() }}/></label>}
     {provider === 'bedrock' && <div className="connection-region-field"><label>AWS region<SelectField tooltip="Choose the AWS region matching your Bedrock API key and models" label="AWS region" className="connection-region-select" value={bedrockRegion(baseUrl)} disabled={blocked} onValueChange={region=>{setBaseUrl(bedrockEndpoint(region));setSelectedModels([]);resetResult()}} options={bedrockRegions.map(([value,label])=>({value,label:`${label} · ${value}`}))}/></label><p className="connection-field-hint">Choose the region for your Bedrock API key and models.</p></div>}
     {provider !== 'ollama' && <div className="connection-key-field"><label htmlFor="connection-key">API key{provider === 'vllm' ? ' (optional)' : ''}<Input id="connection-key" type="password" autoComplete="new-password" spellCheck={false} value={apiKey} placeholder={savedKey ? 'Leave blank to keep saved key' : 'Enter API key'} disabled={blocked || removeApiKey} required={!selfHosted && !savedKey} onChange={event => { setApiKey(event.target.value); resetResult() }}/></label>
      <p className="connection-field-hint">{savedKey ? 'A key is saved. Enter a new key to replace it.' : 'Keys are stored securely on this Mac and are never shown again.'}</p>

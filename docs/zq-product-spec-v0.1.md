@@ -348,7 +348,7 @@ The first local desktop milestone now lives in `apps/desktop`. It uses the appro
 
 This checkpoint precedes shared-data implementation. Local JSON storage is behind native service boundaries, not a choice of the eventual synchronization database. File drafts are device-owned and separate from shared-candidate workspace content. The packaged target currently covers Apple Silicon Macs running macOS 13 or later; other machines need compatibility checks.
 
-Terminal process attachment and the explicitly selected Ollama endpoint have native runtime checks. Zach's known-working test endpoint is `http://127.0.0.1:11434/`. Use that endpoint for subsequent model validation unless Zach selects another; do not start a local Ollama service as a substitute. Full Code, Chat and Work modules and cross-Mac synchronization remain unimplemented.
+Terminal process attachment and the explicitly selected Ollama endpoint have native runtime checks. The personal endpoint used for that check is intentionally omitted. Future live checks require an explicitly supplied endpoint; never turn a test server into an app default or start a local Ollama service as a substitute. Full Code, Chat and Work modules and cross-Mac synchronization remain unimplemented.
 # Dropdown consistency
 
 Use the shared shadcn Select for in-app dropdowns across modules. Project filters, note projects, task status, task projects, and priority use the same themed trigger, menu, focus, and selection styling. Match light/dark/system appearance and the selected color palette. Preserve keyboard navigation and Escape dismissal. Native macOS app menus and file dialogs remain system controls.
@@ -371,7 +371,7 @@ Attachments are selected Notes only (up to ten, 100 KB total). Notes are flushed
 
 Initial limits: three concurrent conversations, 64 KB submitted messages, 512 KB conversation prompt, 2 MiB generated content/thinking, 32 MiB total chat storage with reserved finalization space. Metadata explicitly declaring non-completion models is filtered from the model list. Cloud API adapters, Work integrations, conversation export/deletion and cross-Mac sync remain subsequent work.
 
-Verified with the packaged app using the approved model-server tailnet Ollama endpoint and installed gemma4:latest: connection test, model choice, selected fixture note response, generation across module navigation, draft retention, Stop, and saved history after quit/reopen. No models were downloaded and no local Ollama service was started. Native provider/service and existing workspace checks: 88 passing tests. Light/dark Chat UI inspected, including a long conversation and fixed shell/scroll-pane sizing.
+Verified with the packaged app using the approved remote model server tailnet Ollama endpoint and installed gemma4:latest: connection test, model choice, selected fixture note response, generation across module navigation, draft retention, Stop, and saved history after quit/reopen. No models were downloaded and no local Ollama service was started. Native provider/service and existing workspace checks: 88 passing tests. Light/dark Chat UI inspected, including a long conversation and fixed shell/scroll-pane sizing.
 
 
 ### Chat visual redesign — September 8, 2026

@@ -1,6 +1,6 @@
 # zBrain inspection for zQ
 
-Inspected: 2026-09-07, via authorized SSH to `model-server` and noninteractive sudo.
+Inspected: 2026-09-07, via authorized SSH to `remote-host` and noninteractive sudo.
 Scope: project documentation, selected source, aggregate database metadata, container status, and live read endpoints. No source, configuration, vault, or deployment changes were made. No private note bodies, conversation transcripts, or credentials are reproduced here.
 
 ## Recommendation

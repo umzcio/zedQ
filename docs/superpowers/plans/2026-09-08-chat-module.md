@@ -9,7 +9,7 @@
 
 ## Constraints
 - Preserve compact two-nav shell and all appearance/accent choices. Use shared shadcn controls.
-- Ollama endpoint: http://127.0.0.1:11434/. No local service startup or model downloads.
+- Ollama endpoint: http://model-server.example:11434/. No local service startup or model downloads.
 - First provider is Ollama. Cloud provider adapters are subsequent work.
 - Only explicitly selected note snapshots accompany a submitted message; local files are never implicitly attached.
 - Note content is reference data, not tool instructions. Chat has no tools or computer/file execution.

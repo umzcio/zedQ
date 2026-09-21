@@ -143,7 +143,7 @@ for (const [name, response] of [
   assert.equal(typeof result.error, 'string'); assert.ok(!result.error.includes('private details'));
 });
 
-test('Ollama probe uses the explicitly selected tailnet endpoint without falling back', async (t) => {
+test('Ollama probe uses the explicitly selected remote endpoint without falling back', async (t) => {
  let target;
  t.mock.method(http, 'request', (url, options, callback) => {
   target=String(url);
@@ -151,8 +151,8 @@ test('Ollama probe uses the explicitly selected tailnet endpoint without falling
   request.end=()=>queueMicrotask(()=>{const response=new EventEmitter();response.statusCode=200;response.destroy=()=>{};callback(response);response.emit('data',Buffer.from('{"models":[{"name":"remote-model"}]}'));response.emit('end')});
   return request;
  });
- const result=await runtime.probeOllama('http://127.0.0.1:11434/');
- assert.equal(target,'http://127.0.0.1:11434/api/tags');
+ const result=await runtime.probeOllama('http://model-server.example:11434/');
+ assert.equal(target,'http://model-server.example:11434/api/tags');
  assert.deepEqual(result,{available:true,models:['remote-model']});
 });
 test('Ollama rejects non-HTTP endpoints and embedded credentials before connecting', async t=>{

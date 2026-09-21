@@ -7,7 +7,7 @@ Authorized outcome: tool-capable Ollama models can call create_document(format,t
 Tasks:
 1. Ollama: native function definitions, streamed call accumulation, bounded execution/continuation, capability discovery, cancellation, fixture tests. Contract localTools [{name,description,parameters}], onLocalTool({name,arguments}) -> JSON object; supportsLocalTools(baseUrl,model) returns tools capability and caches on adapter. Never execute unknown calls, truncated calls or after stop. Preserve native thinking in continuation.
 2. Host: capability preparation and accurate system prompt; bounded create_document executor reusing artifact renderer/storage, generated file cards, artifact activity, failure/cancel handling; tests through ChatService and restart.
-3. End-to-end fixture and live model-server Montana DOCX check, verify archive content, package/reopen with original workspace restored. No paid provider calls or test data in normal workspace.
+3. End-to-end fixture and live remote model server Montana DOCX check, verify archive content, package/reopen with original workspace restored. No paid provider calls or test data in normal workspace.
 
 No git metadata exists. Work in authorized tree. Task 1 owns packages/providers/ollama.cjs and its test file; Task 2 owns host/UI files. Shared interface described above; no overlapping file edits.
 

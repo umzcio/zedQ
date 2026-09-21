@@ -49,7 +49,7 @@ Files: `apps/desktop/electron/runtime.cjs`, `scripts/check-runtime.cjs`, `tests/
 
 - Final checks: 38 Node tests pass; TypeScript/Vite production build passes; local macOS arm64 bundle built.
 - Native PTY proof passed with Electron 44.2.0 / Node 24.20.0, same shell PID after detach/reattach, replay verified, process stopped.
-- User corrected Ollama target to http://127.0.0.1:11434/. Native probe succeeded with 16 model names. The temporary local Ollama process was stopped; no models were downloaded or inference requested. Runtime command now requires explicit ZQ_OLLAMA_URL for Ollama probing.
+- User corrected Ollama target to http://model-server.example:11434/. Native probe succeeded with 16 model names. The temporary local Ollama process was stopped; no models were downloaded or inference requested. Runtime command now requires explicit ZQ_OLLAMA_URL for Ollama probing.
 - CUA verified native app launch, note edit and full quit/restart, native configuration-file Open/Save, a Doing task, and a file recovery draft surviving quit without overwriting the original.
 - Review fixes: serialized file saves/flush, editing lock during explicit actions, shutdown inert state including portalled dialogs, close-attempt IDs and timeout cancellation. Seven focused regression checks plus backend suites cover the failure paths.
 - Native picker needed explicit All Files filter for .env selection. Verified against real dialog. Electron binary requires macOS 13.0, reflected in bundle minimum version.
