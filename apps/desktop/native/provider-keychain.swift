@@ -47,6 +47,15 @@ guard let request = (try? JSONSerialization.jsonObject(with: input)) as? [String
       !service.contains("\n"), !account.contains("\n")
 else { fail() }
 
+// Background reconnects must fail quietly when access needs authorization.
+// This setting applies only to this one-request helper process, never the app
+// or other Keychain clients. It does not change an item's access controls.
+if let value = request["interactive"] {
+    guard let flag = value as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() else { fail() }
+    let status = SecKeychainSetUserInteractionAllowed(flag.boolValue)
+    guard status == errSecSuccess else { fail(status) }
+}
+
 // No kSecAttrSynchronizable: keys never enter iCloud Keychain. Exact service
 // and account constrain every request; there is no enumerate/search operation.
 let query: [String: Any] = [

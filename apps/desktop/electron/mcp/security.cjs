@@ -2,6 +2,7 @@ const {randomUUID}=require('node:crypto');
 class ConnectorError extends Error {}
 function safeError(error) {
  if(error instanceof ConnectorError)return error;
+ if(error?.code==='KEYCHAIN_AUTH_REQUIRED')return Object.assign(new ConnectorError('Keychain access needs approval. Reconnect to authorize this connector.'),{needsSignIn:true});
  if(error?.name==='AbortError'||error?.name==='TimeoutError')return new ConnectorError('Connector request cancelled or timed out. Reconnect and try again.');
  if(/Unauthorized|OAuth|Issuer|Registration|InsufficientScope/.test(error?.constructor?.name||''))return new ConnectorError('Connector authorization failed or expired. Reconnect; check the token, client ID and provider registration requirements.');
  return new ConnectorError('Connector request failed. Check the server URL and connection, then reconnect.');
@@ -43,9 +44,14 @@ function createSafeFetch({signal,allowLoopbackHttp=false,fetchImpl=fetch,timeout
 // Credentials may contain arbitrary Unicode and exceed one native Keychain entry.
 // Commit a manifest last, so a failed write never replaces the previous secret.
 class SecretStore {
- constructor(credentials,id){this.credentials=credentials;this.prefix=`mcp-${id}`;this.queue=Promise.resolve()}
+ constructor(credentials,id,{interactive=true}={}){
+  this.interactive=interactive;this.prefix=`mcp-${id}`;this.queue=Promise.resolve();
+  // Consult the current policy for each operation, including token refresh and
+  // rollback. OAuth switches to noninteractive after the user connects.
+  this.credentials={get:key=>credentials.get(key,{interactive:this.interactive}),set:(key,value)=>credentials.set(key,value,{interactive:this.interactive}),delete:key=>credentials.delete(key,{interactive:this.interactive})};
+ }
  key(slot){return `${this.prefix}-${slot}`}
- async get(slot){const raw=await this.credentials.get(this.key(slot));if(!raw)return undefined;try{const m=JSON.parse(Buffer.from(raw,'base64url').toString());if(!/^[a-f0-9-]{36}$/.test(m.g)||!Number.isInteger(m.n)||m.n<1||m.n>32)throw Error();let text='';for(let i=0;i<m.n;i++){const chunk=await this.credentials.get(`${this.key(slot)}-${m.g}-${i}`);if(typeof chunk!=='string'||chunk.length>7800)throw Error();text+=chunk}return JSON.parse(Buffer.from(text,'base64url').toString())}catch{throw new ConnectorError('Saved connector credentials could not be read. Remove and reconnect the server.')}}
+ async get(slot){const raw=await this.credentials.get(this.key(slot));if(!raw)return undefined;try{const m=JSON.parse(Buffer.from(raw,'base64url').toString());if(!/^[a-f0-9-]{36}$/.test(m.g)||!Number.isInteger(m.n)||m.n<1||m.n>32)throw Error();let text='';for(let i=0;i<m.n;i++){const chunk=await this.credentials.get(`${this.key(slot)}-${m.g}-${i}`);if(typeof chunk!=='string'||chunk.length>7800)throw Error();text+=chunk}return JSON.parse(Buffer.from(text,'base64url').toString())}catch(error){if(error?.code==='KEYCHAIN_AUTH_REQUIRED')throw error;throw new ConnectorError('Saved connector credentials could not be read. Remove and reconnect the server.')}}
  transaction(changes,commit){const operation=this.queue.then(async()=>{
   const staged=[];
   try{

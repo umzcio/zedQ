@@ -14,7 +14,7 @@ function createCredentialStore({ directory, helperPath = path.join(__dirname, '.
   const workspace = createHash('sha256').update(path.resolve(directory)).digest('hex')
   const service = `dev.zedq.desktop.providers.${workspace}`
 
-  async function request(operation, id, key) {
+  async function request(operation, id, key, interactive) {
     if (typeof id !== 'string' || !/^[a-zA-Z0-9._-]{1,128}$/.test(id)) throw new Error('Invalid credential id')
     if (operation === 'set' && !validKey(key)) throw new Error('Invalid API key')
     if (platform !== 'darwin') throw new Error('Provider credentials require macOS Keychain')
@@ -24,13 +24,13 @@ function createCredentialStore({ directory, helperPath = path.join(__dirname, '.
       let stdout = []
       let outputBytes = 0
       let timer
-      const fail = message => {
+      const fail = (message, code) => {
         if (finished) return
         finished = true
         clearTimeout(timer)
         stdout = []
         try { child?.kill('SIGKILL') } catch { /* Never expose child errors. */ }
-        reject(new Error(message))
+        reject(Object.assign(new Error(message), code ? { code } : {}))
       }
       try {
         child = spawn(helperPath, [], {
@@ -60,8 +60,8 @@ function createCredentialStore({ directory, helperPath = path.join(__dirname, '.
           stdout = []
           if (!response || response.ok !== true) {
             const status = response?.status
-            if (status === -128) return fail('Keychain access was cancelled.')
-            if (status === -25293 || status === -25308) return fail('Keychain access was denied or the login keychain is locked.')
+            if (status === -128) return fail('Keychain access was cancelled.', 'KEYCHAIN_AUTH_REQUIRED')
+            if (status === -25293 || status === -25308 || status === -25315) return fail('Keychain access was denied or the login keychain is locked.', 'KEYCHAIN_AUTH_REQUIRED')
             return fail('Keychain operation failed.')
           }
           if (operation === 'get' && response.key !== null && !validKey(response.key)) return fail('Keychain helper returned an invalid credential.')
@@ -69,7 +69,7 @@ function createCredentialStore({ directory, helperPath = path.join(__dirname, '.
           clearTimeout(timer)
           resolve(operation === 'get' ? response.key : undefined)
         })
-        child.stdin.end(JSON.stringify({ operation, service, account: id, ...(operation === 'set' ? { key } : {}) }))
+        child.stdin.end(JSON.stringify({ operation, service, account: id, interactive, ...(operation === 'set' ? { key } : {}) }))
       } catch { fail('Keychain helper could not start. Rebuild or reinstall zQ.') }
     })
   }
@@ -78,16 +78,17 @@ function createCredentialStore({ directory, helperPath = path.join(__dirname, '.
   // unrelated connector restores cannot stack password dialogs. A queued
   // operation gets its full timeout only when its own helper starts.
   let pending = Promise.resolve()
-  const enqueue = (operation, id, key) => {
-    const result = pending.then(() => request(operation, id, key))
+  const enqueue = (operation, id, key, { interactive = true } = {}) => {
+    if (typeof interactive !== 'boolean') return Promise.reject(new Error('Invalid Keychain interaction policy'))
+    const result = pending.then(() => request(operation, id, key, interactive))
     pending = result.then(() => undefined, () => undefined)
     return result
   }
 
   return {
-    get: id => enqueue('get', id),
-    set: (id, key) => enqueue('set', id, key),
-    delete: id => enqueue('delete', id),
+    get: (id, options) => enqueue('get', id, undefined, options),
+    set: (id, key, options) => enqueue('set', id, key, options),
+    delete: (id, options) => enqueue('delete', id, undefined, options),
   }
 }
 module.exports = { createCredentialStore }

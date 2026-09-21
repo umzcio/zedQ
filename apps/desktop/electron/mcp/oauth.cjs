@@ -9,6 +9,8 @@ const ENTRA='https://login.microsoftonline.com/organizations/v2.0',ENTRA_ISSUER=
 const ENTRA_AUTHORIZE='https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize',ENTRA_TOKEN='https://login.microsoftonline.com/organizations/oauth2/v2.0/token';
 
 class NativeOAuthProvider {
+ get interactive(){return this.secrets.interactive}
+ set interactive(value){this.secrets.interactive=value}
  constructor({row,secrets,signal,openExternal,onAuthenticating,allowLoopbackHttp,interactive=true}){
   Object.assign(this,{row,secrets,signal,openExternal,onAuthenticating,allowLoopbackHttp});this.workIQ=row.catalogId==='microsoft365'&&row.url===WORKIQ&&(row.authType??'oauth')==='oauth'&&row.clientId==='ba081686-5d24-4bc6-a0d6-d034ecffed87'&&row.redirectPort===12798&&row.redirectHost==='127.0.0.1'&&!row.clientMetadataUrl;this.callbackPath=this.workIQ?'/':'/oauth/callback';
   // Entra v2 uses scopes, not the legacy resource parameter (also omitted by Copilot CLI).

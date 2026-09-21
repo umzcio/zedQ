@@ -107,7 +107,7 @@ class ChatConnections{
   this.cleaning=(async()=>{
    for(const id of [...this.host.state.pendingCredentialDeletes]){
     if(this.host.state.connections.some(c=>c.credentialRef===id))continue;
-    try{await this.credentials.delete(id);this.host.change(s=>{s.pendingCredentialDeletes=s.pendingCredentialDeletes.filter(key=>key!==id);return null})}
+    try{await this.credentials.delete(id,{interactive:false});this.host.change(s=>{s.pendingCredentialDeletes=s.pendingCredentialDeletes.filter(key=>key!==id);return null})}
     catch{/* Keychain may be locked. The durable journal retries next launch. */}
    }
   })();

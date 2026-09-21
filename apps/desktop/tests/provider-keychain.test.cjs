@@ -4,7 +4,7 @@ const { EventEmitter } = require('node:events')
 const { PassThrough, Writable } = require('node:stream')
 const path = require('node:path')
 const { existsSync } = require('node:fs')
-const { mkdtemp, rm } = require('node:fs/promises')
+const { mkdtemp, rm, copyFile } = require('node:fs/promises')
 const { randomUUID } = require('node:crypto')
 const { spawnSync } = require('node:child_process')
 const { createCredentialStore } = require('../electron/provider-keychain.cjs')
@@ -183,5 +183,45 @@ test('real macOS Keychain creates, updates, retrieves, and deletes one isolated 
     await credentials.delete(id)
   } finally {
     try { await credentials.delete(id) } finally { await rm(directory, { recursive: true, force: true }) }
+  }
+})
+
+test('background credential operations cannot request password dialogs and preserve an actionable error', async () => {
+  const fake = helper((request, child) => reply(child, request.interactive
+    ? { ok: true, key: null }
+    : { ok: false, status: -25308 }))
+  const credentials = store(fake)
+  for (const action of [() => credentials.get('connector', { interactive: false }),
+    () => credentials.set('connector', 'test-value', { interactive: false }),
+    () => credentials.delete('connector', { interactive: false })]) {
+    await assert.rejects(action, { code: 'KEYCHAIN_AUTH_REQUIRED' })
+  }
+  assert.equal(await credentials.get('connector'), null)
+  assert.deepEqual(fake.calls.map(call => call.request.interactive), [false, false, false, true])
+  await assert.rejects(credentials.get('connector', { interactive: 'false' }), /interaction policy/)
+  assert.equal(fake.calls.length, 4)
+})
+
+test('native background reads reject an untrusted helper without showing a password dialog', {
+  skip: process.platform !== 'darwin' || process.env.ZQ_TEST_REAL_KEYCHAIN !== '1',
+  timeout: 30000,
+}, async () => {
+  const directory = await mkdtemp('/private/tmp/zq-keychain-background-')
+  const copiedHelper = path.join(directory, 'untrusted-helper')
+  const original = createCredentialStore({ directory, helperPath: nativeHelper, timeoutMs: 5000 })
+  const id = `test-${randomUUID()}`
+  const options = { interactive: false }
+  try {
+    await copyFile(nativeHelper, copiedHelper)
+    const signed = spawnSync('/usr/bin/codesign', ['--force', '--sign', '-', '--identifier', `dev.zedq.test.${randomUUID()}`, copiedHelper], { encoding: 'utf8' })
+    assert.equal(signed.status, 0, 'Sign only the temporary test helper')
+    await original.set(id, 'isolated-fixture-value', options)
+    assert.equal(await original.get(id, options), 'isolated-fixture-value')
+    const untrusted = createCredentialStore({ directory, helperPath: copiedHelper, timeoutMs: 5000 })
+    await assert.rejects(untrusted.get(id, options), { code: 'KEYCHAIN_AUTH_REQUIRED' })
+    // Failed background authorization must not alter the item or its ACL.
+    assert.equal(await original.get(id, options), 'isolated-fixture-value')
+  } finally {
+    try { await original.delete(id, options) } finally { await rm(directory, { recursive: true, force: true }) }
   }
 })

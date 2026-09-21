@@ -78,7 +78,7 @@ test('missing saved key fails before creating messages',async t=>{
 });
 test('retired key cleanup failures survive restart and can be retried',async t=>{
  const f=fixture(t),a=await f.service.saveConnection(draft),old=[...f.keys.keys()][0];const remove=f.credentials.delete;
- f.credentials.delete=async()=>{throw Error('Locked')};await f.service.saveConnection({...a,apiKey:'replacement'});
+ f.credentials.delete=async(id,options)=>{assert.equal(options?.interactive,false);throw Error('Locked')};await f.service.saveConnection({...a,apiKey:'replacement'});
  assert.equal(f.keys.has(old),true);assert.ok(new ChatStore(f.directory).load().pendingCredentialDeletes.includes(old));
  f.credentials.delete=remove;await f.service.connections.cleanup();assert.equal(f.keys.has(old),false);assert.deepEqual(new ChatStore(f.directory).load().pendingCredentialDeletes,[]);
 });

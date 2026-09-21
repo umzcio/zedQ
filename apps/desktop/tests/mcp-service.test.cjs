@@ -268,3 +268,31 @@ test('a timed-out background connection reports failure without preventing the o
  const originalFetch=service.fetchImpl;let calls=0;service.fetchImpl=async(url,init)=>{if(++calls===1)return new Promise((resolve,reject)=>init.signal.addEventListener('abort',()=>reject(init.signal.reason),{once:true}));return originalFetch(url,init)};
  await service.restoreConnections();assert.ok(service.list().some(row=>row.status==='connected'));assert.ok(service.list().some(row=>row.status==='error'&&/timed out/.test(row.error)&&!row.needsSignIn));
 });
+
+test('background restore stops at denied Keychain access; explicit reconnect authorizes and refresh stays silent',async t=>{
+ const f=await fixture(t,{oauth:true});const {service,directory,credentials}=setup(t,{allowLoopbackHttp:true,openExternal:f.openExternal});
+ const row=await service.save({name:'Keychain fixture',url:f.origin+'/mcp'});await service.connect(row.id);await service.close();
+ const accesses=[];let locked=true;
+ const guarded={};for(const op of ['get','set','delete'])guarded[op]=async(...args)=>{
+  const options=args.at(-1);accesses.push({op,interactive:options?.interactive});
+  if(locked&&options?.interactive===false)throw Object.assign(new Error('native detail must not leak'),{code:'KEYCHAIN_AUTH_REQUIRED'});
+  return credentials[op](...args);
+ };
+ const reopened=new ConnectorService({directory,credentials:guarded,allowLoopbackHttp:true,openExternal:f.openExternal});t.after(()=>reopened.close());
+ await reopened.restoreConnections();
+ assert.equal(reopened.get(row.id).status,'error');assert.equal(reopened.get(row.id).needsSignIn,true);
+ assert.match(reopened.get(row.id).error,/Keychain access needs approval/);assert.equal(f.opens,1);
+ assert.deepEqual(accesses,[{op:'get',interactive:false}]);
+ // An error row does not restart the authorization loop on another restore.
+ await reopened.restoreConnections();assert.equal(accesses.length,1);
+ accesses.length=0;await reopened.connect(row.id);assert.equal(reopened.get(row.id).status,'connected');
+ assert.ok(accesses.length>1);assert.ok(accesses.every(item=>item.interactive===true));
+ await reopened.setTools({id:row.id,names:['echo']});
+ locked=false;accesses.length=0;f.rejectAccess=true;
+ await reopened.callTool(row.id,'echo',{text:'Refresh'},{expectedRevision:reopened.get(row.id).revision});
+ assert.ok(accesses.some(item=>item.op==='set'));assert.ok(accesses.every(item=>item.interactive===false));
+ locked=true;accesses.length=0;f.rejectAccess=true;
+ await assert.rejects(reopened.callTool(row.id,'echo',{text:'Locked refresh'},{expectedRevision:reopened.get(row.id).revision}),/Reconnect/);
+ assert.equal(reopened.get(row.id).status,'error');assert.equal(reopened.get(row.id).needsSignIn,true);
+ assert.ok(accesses.length>0);assert.ok(accesses.every(item=>item.interactive===false));
+});
