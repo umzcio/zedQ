@@ -16,7 +16,9 @@ function createTmux({binary,socket,env = process.env}) {
   const childEnv = {...env}
   delete childEnv.TMUX
   function run(args) {
-    return new Promise((resolve,reject) => execFile(binary,['-f','/dev/null','-S',socket,...args],
+    // Finder launches may have no UTF-8 locale. Without -u, tmux replaces tabs
+    // and non-ASCII output with underscores, breaking pane identity parsing.
+    return new Promise((resolve,reject) => execFile(binary,['-u','-f','/dev/null','-S',socket,...args],
       {env:childEnv,encoding:'utf8',timeout:3000,maxBuffer:1024*1024},(error,stdout,stderr) => {
         if (!error) return resolve(stdout)
         const missing = error.code === 1 && /no server running|error connecting[^\n]*\((No such file or directory|Connection refused)\)|can't find (session|pane|window)/i.test(stderr)

@@ -52,14 +52,15 @@ test('desktop attaches under the recorded root context and rejects cross-host pr
 });
 test('real isolated tmux creates a login shell, survives detach, and refuses duplicate names',async t=>{
  const {execFile,execFileSync}=require('node:child_process'),{externalTmux}=require('../electron/code/external-terminal.cjs');
- const dir=root(t),env={...process.env,TMUX_TMPDIR:dir,HOME:dir};delete env.TMUX;
+ const dir=root(t),env={...process.env,TMUX_TMPDIR:dir,HOME:dir,LC_ALL:'C',LANG:'C'};delete env.TMUX;
+ const cwd=path.join(dir,'café');fs.mkdirSync(cwd);
  const binary='/opt/homebrew/bin/tmux';
  const execute=(file,args,options,callback)=>execFile(file,args,{...options,env},callback);
  const tmux=externalTmux(binary,execute);
  t.after(()=>{try{execFileSync(binary,['kill-server'],{env,stdio:'ignore'})}catch{}});
  assert.deepEqual(await tmux.discover(),[]);
- const target=await tmux.create('isolated-work',dir);assert.match(target,/^\$\d+$/);
- const info=await tmux.inspect(target);assert.equal(info.name,'isolated-work');assert.equal(info.attached,false);assert.equal(fs.realpathSync(info.cwd),fs.realpathSync(dir));assert.equal(info.windows,1);
+ const target=await tmux.create('isolated-work',cwd);assert.match(target,/^\$\d+$/);
+ const info=await tmux.inspect(target);assert.equal(info.name,'isolated-work');assert.equal(info.attached,false);assert.equal(fs.realpathSync(info.cwd),fs.realpathSync(cwd));assert.equal(info.windows,1);
  await assert.rejects(tmux.create('isolated-work',dir),{code:'TMUX_FAILED'});
  await tmux.write(target,'echo zq-test\r');assert.equal((await tmux.inspect(target)).identity,info.identity);
 });

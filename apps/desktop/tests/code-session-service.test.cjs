@@ -17,10 +17,10 @@ async function until(fn) {
   }
   throw new Error('test deadline')
 }
-function setup(t) {
+function setup(t, environment = {}) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'zq-persist-')))
   const clients = []
-  const env = {...process.env,HOME:root,ZDOTDIR:root}
+  const env = {...process.env,HOME:root,ZDOTDIR:root,...environment}
   delete env.TMUX
   const options = {root,tmuxPath,env}
   const tmux = args => execFileSync(tmuxPath,['-S',path.join(root,'tmux'),...args],{env,encoding:'utf8',stdio:['ignore','pipe','pipe']})
@@ -42,6 +42,18 @@ async function start(h,client) {
     return snap.output.includes('agent-ready') && snap
   })
 }
+test('desktop startup without a UTF-8 locale connects and retains session ownership',async t => {
+  const h = setup(t,{LC_ALL:'C',LANG:'C',PATH:'/usr/bin:/bin:/usr/sbin:/sbin'})
+  const client = await h.connect()
+  const before = await start(h,client)
+  const helper = await client.request('ping')
+  client.close()
+  const next = await h.connect()
+  assert.equal((await next.request('ping')).pid,helper.pid)
+  assert.equal((await next.request('snapshot',{id:h.id})).pid,before.pid)
+  await next.request('claim',{id:h.id})
+  await next.request('stop',{id:h.id})
+})
 test('client disconnect preserves process, screen and exclusive input ownership',async t => {
   const h = setup(t)
   const first = await h.connect()
